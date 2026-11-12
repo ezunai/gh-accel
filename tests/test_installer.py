@@ -24,6 +24,13 @@ class TestUnitTemplate:
         assert "PYTHONPATH=/opt/gh-accel/src" in text
         assert "ExecStart=/usr/bin/python3 -m gh_accel" in text
 
+    def test_docker_proxy_template_matches_source(self) -> None:
+        """dockerd drop-in 模板的打包副本必须与源文件一致。"""
+        source = (REPO_ROOT / "systemd" / "docker-proxy.conf").read_text(encoding="utf-8")
+        packaged = REPO_ROOT / "src" / "gh_accel" / "data" / "docker-proxy.conf"
+        assert packaged.is_file(), "打包副本缺失"
+        assert packaged.read_text(encoding="utf-8") == source
+
     def test_packaged_copy_matches_source(self) -> None:
         """包内 data/ 的副本必须与 systemd/ 下的源文件一致，避免两处漂移。"""
         source = (REPO_ROOT / "systemd" / "gh-accel.service").read_text(encoding="utf-8")
@@ -32,7 +39,7 @@ class TestUnitTemplate:
         assert packaged.read_text(encoding="utf-8") == source
 
     def test_packaged_scripts_match_source(self) -> None:
-        for name in ("gh-accel-get", "gh-accel-env"):
+        for name in ("gh-accel-get", "gh-accel-env", "docker-proxy.sh", "install.sh"):
             source = (REPO_ROOT / "scripts" / name).read_text(encoding="utf-8")
             packaged = REPO_ROOT / "src" / "gh_accel" / "data" / name
             assert packaged.is_file(), f"打包副本缺失: {name}"

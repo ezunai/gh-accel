@@ -15,6 +15,7 @@ import logging
 import os
 import socket
 import socketserver
+import time
 import urllib.error
 from http.server import BaseHTTPRequestHandler
 
@@ -30,6 +31,7 @@ from .config import (
     Config,
 )
 from .fetcher import Fetcher
+from .registry import make_mirror
 from .sources import SourceRegistry, load_registry
 
 __all__ = ["ProxyServer", "make_server"]
@@ -47,6 +49,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     config: Config
     fetcher: Fetcher
     registry: SourceRegistry
+    mirror: object | None
     cache: FileCache
     preference: SourcePreference
     authority: CertificateAuthority
@@ -341,6 +344,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         headers = self._client_headers()
 
+        # registry 协议：/v2/<name>/manifests/<ref> 与 /v2/<name>/blobs/<digest>
+        # 与代理的路径前缀（/gh/、/raw/、/api/）天然不冲突，共用同一端口
+        if path == "/v2" or path.startswith("/v2/"):
+            self._serve_registry(path, headers)
+            return
+
         match = RELEASE_PATH_RE.match(path)
         if match:
             self._serve_release(match.groupdict(), headers)
@@ -513,6 +522,67 @@ class ProxyHandler(BaseHTTPRequestHandler):
         # 未登记的 host 与容器 registry 一律原样转发
         return "passthrough", path
 
+    def _serve_registry(self, path: str, headers: dict[str, str]) -> None:
+        """registry 协议请求（给 Docker daemon 用）。
+
+        与代理共用一个端口：registry 的路径是 ``/v2/...``，代理的是
+        ``/gh/`` ``/raw/`` ``/api/`` 或绝对 URI，不会互相误判。
+        """
+        mirror = self.mirror
+        if mirror is None:
+            self._err(404, "registry mirror 未启用")
+            return
+        started = time.time()
+        status, resp_headers, body = mirror.fetch(path, headers)
+
+        if isinstance(body, bytes):
+            self.send_response(status)
+            for name, value in resp_headers.items():
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            log.info(
+                "registry %s %s -> %d (%d B, %.2fs)",
+                self.command,
+                path,
+                status,
+                len(body),
+                time.time() - started,
+            )
+            return
+
+        # 流式透传（镜像层可能上百 MB）
+        response = body
+        self.send_response(status)
+        for name, value in resp_headers.items():
+            self.send_header(name, value)
+        length = response.headers.get("Content-Length")
+        self.send_header("Content-Length", length if length else "0")
+        self.end_headers()
+        written = 0
+        if self.command != "HEAD":
+            try:
+                while True:
+                    chunk = response.read1(256 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    written += len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+        with contextlib.suppress(Exception):
+            response.close()
+        log.info(
+            "registry %s %s -> %d (%d B, %.2fs)",
+            self.command,
+            path,
+            status,
+            written,
+            time.time() - started,
+        )
+
     def _serve_absolute(self, uri: str) -> None:
         """处理绝对 URI 形式的请求（标准 HTTP 代理语义）。
 
@@ -566,6 +636,7 @@ def make_server(config: Config) -> ProxyServer:
     """构造并返回配置好的服务器。"""
     fetcher = Fetcher(config)
     registry = load_registry(config.sources_file)
+    mirror = make_mirror(config) if config.mirror_port else None
     cache = FileCache(config.file_cache_dir, config.max_cache_bytes)
     preference = SourcePreference(config.source_cache_file)
     authority = CertificateAuthority(config.cert_dir, config.ca_pem, config.ca_key)
@@ -577,6 +648,7 @@ def make_server(config: Config) -> ProxyServer:
             "config": config,
             "fetcher": fetcher,
             "registry": registry,
+            "mirror": mirror,
             "cache": cache,
             "preference": preference,
             "authority": authority,

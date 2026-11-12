@@ -9,6 +9,42 @@
 
 ### 新增
 
+- **本地 registry mirror（Docker 镜像地址统一收进项目）**。代理在同一端口上
+  同时提供 HTTP 代理和 registry mirror，dockerd 的 `registry-mirrors` 只需
+  指向 `http://127.0.0.1:19770`。上游列表存在
+  `~/.config/gh-accel/registries.json`，由 `gh-accel registry` 管理。
+  - 上游自动故障转移：连接失败或 5xx 换下一个；404 视为确定性结果。
+  - 认证懒加载：先不带 token 请求，只有 401 才去换；换不到 token 时跳过该
+    上游而不是把 401 传给 daemon。
+  - `referrers` 查询返回空 index，避免 Docker 24+ 回退到被 DNS 污染的
+    `registry-1.docker.io` 白等 60 秒（实测 pull 63s → 1.1s）。
+  - 新增 CLI：`gh-accel registry [--test|--add-upstream|--remove-upstream|
+    --reset|--daemon-config]`。
+- **Docker 兜底支持**：`scripts/docker-proxy.sh` 可让 dockerd 的 registry
+  流量走本代理（默认不启用）。MITM 新增 ghcr.io / quay.io 路由，走 passthrough。
+- **CA bundle**：新增「系统 CA + 本地 CA」的合集
+  （`~/.config/gh-accel/certs/ca-bundle.pem`），由 `gh-accel install` 生成。
+
+### 修复
+
+- **服务无法正常停止**。`SIGTERM` 的处理函数里直接调用 `server.shutdown()`，
+  而信号处理就在 `serve_forever()` 的主线程里执行 —— 自己等自己，必然死锁，
+  只能等 systemd 的 90 秒超时后 SIGKILL。改为另起线程调用。
+- **透传大响应体改为流式**。此前 `_forward` 把上游响应全量读进内存，且用
+  `read(n)`（读满 n 字节的语义），导致 Docker 的镜像层这类上百 MB 的
+  响应在经代理转发时卡死、内存占用随响应体线性增长。
+- **Authorization 头不再被丢弃**。容器 registry 的流程是「先换 token，再带
+  Authorization 拉 blob」，头丢了 blob 请求直接 401。
+- **绝对 URI 支持**（`GET http://host/path`），标准 HTTP 代理语义，明文模式
+  下也能代理任意站点。
+
+### 重要说明
+
+`cacert` / `SSL_CERT_FILE` 都是**替换**默认 CA 列表而非追加。只配置本地 CA
+会导致直连任何其它站点都因缺根证书而校验失败（表现为连接卡死或
+certificate verify failed），很容易被误判成网络问题。因此客户端一律使用
+CA bundle。
+
 - **源池可配置**：源从写死改为注册表 + 用户配置文件
   （`~/.config/gh-accel/sources.json`）。可用 `gh-accel sources` 增删源、
   停用/启用内置源、调整优先级。一个源可同时服务多条链路

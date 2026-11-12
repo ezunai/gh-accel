@@ -39,11 +39,13 @@ gh-accel/
 ├── Makefile                   开发辅助（install/test/lint/service）
 ├── pyproject.toml             包元数据与工具配置
 ├── systemd/
-│   └── gh-accel.service       systemd user unit（唯一来源）
+│   ├── gh-accel.service       systemd user unit（唯一来源）
+│   └── docker-proxy.conf      dockerd 的 systemd drop-in 模板
 ├── scripts/
 │   ├── install.sh             一键安装（install.sh 的薄包装）
 │   ├── gh-accel-get           命令行下载（走代理）
-│   └── gh-accel-env           导出代理与 CA 环境变量
+│   ├── gh-accel-env           导出代理与 CA 环境变量
+│   └── docker-proxy.sh        dockerd 走代理的开关
 ├── src/gh_accel/
 │   ├── __init__.py
 │   ├── __main__.py            入口：python -m gh_accel
@@ -292,6 +294,115 @@ gh-accel sources --reset                              # 恢复内置源池
 * **内置源不能删除**，只能 `--disable`。
 * **改完立即生效**：代理每次取源前检查配置文件是否变化，无需重启服务。
 
+## Docker 加速
+
+Docker 的下载链路和 GitHub 工具链不同：流量由 **dockerd** 发出，不经过
+shell 环境变量，也不读 `~/.curlrc`。本机还有个更硬的问题：`registry-1.docker.io`
+与 `auth.docker.io` 都被 DNS 污染（解析到 `face:b00c` 这类 Facebook 的 IPv6
+段），直连必然失败。
+
+所以镜像地址统一收进本项目：`gh-accel` 在**同一个端口**上同时提供 HTTP
+代理和 registry mirror，dockerd 只需要指向一个本地地址。上游列表存在
+`~/.config/gh-accel/registries.json`，换源、加源、测速都走 `gh-accel registry`，
+不再散落在 `/etc/docker/daemon.json` 里。
+
+### 推荐用法：registry-mirrors 指向本机
+
+```json
+// /etc/docker/daemon.json
+{
+  "registry-mirrors": ["http://127.0.0.1:19770"]
+}
+```
+
+```bash
+sudo systemctl restart docker
+docker pull alpine:latest
+```
+
+`gh-accel registry --daemon-config` 会直接打印这段配置。daemon 的
+`registry-mirrors` **只对 Docker Hub 生效**；ghcr.io 等其它 registry 见下文。
+
+实测（本机，冷启动；代理服务已在跑）：
+
+| 镜像 | 耗时 |
+| --- | --- |
+| `alpine:latest` | **1.1s** |
+| `busybox:latest` | 6.5s |
+| `nginx:alpine` | 14.6s |
+| `python:3.13-alpine` | 11.2s |
+| 缓存命中（镜像已在本地） | 1.2s |
+
+### 上游管理
+
+```bash
+gh-accel registry                        # 查看镜像组
+gh-accel registry --test                 # 实测各上游（并发测速）
+gh-accel registry --add-upstream URL     # 加一个上游（排最前）
+gh-accel registry --remove-upstream URL  # 删一个上游
+gh-accel registry --reset                # 恢复内置镜像组
+gh-accel registry --daemon-config        # 打印 daemon.json 片段
+```
+
+内置上游按优先级：`dockerproxy.net`（匿名可用，实测 1.3s）、
+`docker.1ms.run`、`docker.m.daocloud.io`。后两者需要向 `auth.docker.io` 换
+token，而它在本机不可达 —— mirror 会**跳过**这个上游而不是把 401 传给
+daemon，故障转移不会白等。
+
+认证是**懒加载**的：先不带 token 请求，只有上游回 401 才去换 token。多数
+国内镜像匿名可拉，预先换 token 纯属浪费。
+
+### OCI referrers 的 60 秒陷阱
+
+Docker 24+ 在 pull 时会先查 OCI referrers（签名、SBOM、attestation）。若
+mirror 对这个路径回 404，daemon 会**回退到原始 registry**
+（`registry-1.docker.io`）再查一次 —— 而它被 DNS 污染，白等 60 秒。本项目的
+mirror 对 `referrers` 直接返回合法的空 index，把 63 秒的 pull 降到 1.1 秒。
+
+### 兜底：dockerd 走 HTTP 代理（默认不启用）
+
+镜像地址是首选。只有在 mirror 也拉不到、又需要 dockerd 直接访问某个
+registry 时，才用这个兜底。它让 dockerd 的流量走本项目的 MITM 代理。
+
+```bash
+docker-proxy.sh status     # 查看状态
+docker-proxy.sh enable     # 启用（需 root，会重启 dockerd）
+docker-proxy.sh disable    # 停用
+```
+
+它做的事：
+
+```ini
+# /etc/systemd/system/docker.service.d/gh-accel.conf
+Environment="https_proxy=http://127.0.0.1:19770"
+Environment="http_proxy=http://127.0.0.1:19770"
+Environment="SSL_CERT_FILE=<home>/.config/gh-accel/certs/ca-bundle.pem"
+```
+
+* `SSL_CERT_FILE` 指向**系统 CA + 本地 CA 的合集**。Go 的 `crypto/x509`
+  读该环境变量；只给本地 CA 的话 dockerd 无法验证任何公开 registry 的
+  证书。合集由 `gh-accel install` 生成。
+* **不需要**把 CA 装进系统信任库。
+
+启用前要知道：
+
+1. **重启 dockerd 会中断正在运行的容器。**
+2. **代理成为 dockerd 的单点故障** —— 代理挂了 Docker 全部拉取失败。
+3. MITM 下 registry 的 blob 吞吐一般，大镜像不如本地 mirror 快。
+
+### ghcr.io 的国内镜像
+
+```bash
+docker pull ghcr.nju.edu.cn/home-assistant/home-assistant:stable
+```
+
+缺点是镜像名要改写。可以配合 `docker tag` 改回原名：
+
+```bash
+docker pull ghcr.nju.edu.cn/owner/image:tag
+docker tag ghcr.nju.edu.cn/owner/image:tag owner/image:tag
+```
+
 ## 其它生态的国内镜像
 
 | 生态 | 配置位置 | 镜像 |
@@ -319,6 +430,7 @@ gh-accel sources    # 列出源池与优先级
 gh-accel clean      # 清理下载缓存
 gh-accel logs       # 查看代理日志
 gh-accel sources    # 查看/编辑源池
+docker-proxy.sh     # dockerd 走代理的开关（Docker 章节有说明）
 
 gh-accel-get <github-url>  # 命令行走代理下载 release / raw 文件
 eval "$(gh-accel-env)"      # 给当前 shell 注入代理与 CA 变量

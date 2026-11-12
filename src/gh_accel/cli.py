@@ -118,6 +118,22 @@ def cmd_test(config: Config) -> int:
     return 0
 
 
+def sources_main(argv: list[str]) -> int:
+    """``gh-accel sources`` 的入口。选项在这里自己解析，避免与主 CLI 冲突。"""
+    parser = argparse.ArgumentParser(prog="gh-accel sources", description="查看与编辑源池")
+    parser.add_argument("--add", metavar="名字", help="新增一个源")
+    parser.add_argument("--remove", metavar="名字", help="删除一个自定义源")
+    parser.add_argument("--disable", metavar="名字", help="禁用一个源")
+    parser.add_argument("--enable", metavar="名字", help="启用一个源")
+    parser.add_argument("--reset", action="store_true", help="恢复内置源池")
+    parser.add_argument("--template", metavar="URL", help="源的 URL 模板")
+    parser.add_argument("--chains", metavar="a,b", help="适用的链路")
+    parser.add_argument("--chain", default="release", help="单个链路（默认 release）")
+    parser.add_argument("--priority", type=int, default=100, help="优先级，越小越靠前")
+    args = parser.parse_args(argv)
+    return cmd_sources(load_config(), args)
+
+
 def cmd_sources(config: Config, args: argparse.Namespace) -> int:
     """查看与编辑源池。"""
     from .sources import load_registry
@@ -253,31 +269,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "command",
-        choices=sorted(COMMANDS) + ["install"],
-        help="status=服务状态 test=测速 sources=源池 clean=清缓存 logs=日志 "
-        "install=安装服务并配置客户端",
+        choices=sorted(COMMANDS) + ["install", "registry"],
+        help="status=服务状态 test=测速 sources=源池 registry=镜像地址 "
+        "clean=清缓存 logs=日志 install=安装服务并配置客户端",
     )
     parser.add_argument("--prefix", default="~/.local", help="命令安装目录")
     # sources 子命令的编辑选项
-    parser.add_argument("--add", metavar="名字", help="新增一个源")
-    parser.add_argument("--remove", metavar="名字", help="删除一个自定义源")
-    parser.add_argument("--disable", metavar="名字", help="禁用一个源")
-    parser.add_argument("--enable", metavar="名字", help="启用一个源")
-    parser.add_argument("--reset", action="store_true", help="恢复内置源池")
-    parser.add_argument("--template", metavar="URL", help="源的 URL 模板")
-    parser.add_argument("--chains", metavar="a,b", help="适用的链路")
-    parser.add_argument("--chain", default="release", help="单个链路（默认 release）")
-    parser.add_argument("--priority", type=int, default=100, help="优先级，越小越靠前")
+    # registry（镜像地址）子命令的选项
     parser.add_argument("--root", default="", help="源码目录（默认当前目录）")
     parser.add_argument("--port", type=int, default=19770, help="代理端口")
     parser.add_argument("--no-service", action="store_true", help="不装 systemd 服务")
     parser.add_argument("--no-client", action="store_true", help="不配客户端")
     parser.add_argument("--dry-run", action="store_true", help="只打印不执行")
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(argv)
     if args.command == "install":
         return cmd_install(load_config(), args)
     if args.command == "sources":
-        return cmd_sources(load_config(), args)
+        return sources_main(extra)
+    if args.command == "registry":
+        # registry 子命令的参数原样透传，避免两套选项名对不上
+        from .registry_cli import main as registry_main
+
+        return registry_main(extra)
     return COMMANDS[args.command](load_config())
 
 

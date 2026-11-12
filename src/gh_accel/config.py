@@ -67,6 +67,10 @@ class Config:
     certs_dir: str
     #: 用户自定义的源配置文件
     sources_file: str
+    #: 镜像组（Docker registry mirror）配置文件
+    registries_file: str
+    #: registry mirror 的监听端口（0 表示不启动）
+    mirror_port: int
     #: 上游请求超时（秒）
     timeout: float
     #: 竞速探测的单源超时（秒）
@@ -227,6 +231,8 @@ def load_config() -> Config:
         cache_dir=os.path.expanduser(os.environ.get("GH_ACCEL_CACHE", "~/.cache/gh-accel")),
         certs_dir=os.path.join(config_home, "certs"),
         sources_file=os.path.join(config_home, "sources.json"),
+        registries_file=os.path.join(config_home, "registries.json"),
+        mirror_port=_env_int("GH_ACCEL_MIRROR_PORT", 19771),
         timeout=_env_float("GH_ACCEL_TIMEOUT", 25.0),
         probe_timeout=_env_float("GH_ACCEL_PROBE_TIMEOUT", 12.0),
         probe_max_duration=_env_float("GH_ACCEL_PROBE_MAX", 5.0),

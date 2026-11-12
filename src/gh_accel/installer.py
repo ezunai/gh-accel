@@ -95,6 +95,37 @@ def _run(cmd: list[str], dry_run: bool) -> tuple[int, str]:
         return 1, str(exc)
 
 
+def build_ca_bundle(ca_pem: str, bundle: str | None = None) -> str:
+    """把系统 CA 与本地 CA 合并成一个 bundle。
+
+    必须合并而不是只用本地 CA：curl 的 ``cacert`` 与 Go 的
+    ``SSL_CERT_FILE`` 都是**替换**默认 CA 列表，不是追加。只放本地 CA
+    的话，直连任何其它站点都会因缺根证书而校验失败（表现为连接卡死或
+    certificate verify failed）。
+    """
+    if bundle is None:
+        bundle = os.path.join(os.path.dirname(ca_pem), "ca-bundle.pem")
+    system_candidates = [
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
+    ]
+    system_ca = next((p for p in system_candidates if os.path.exists(p)), None)
+
+    os.makedirs(os.path.dirname(bundle), exist_ok=True)
+    with open(bundle, "wb") as out:
+        if system_ca:
+            with open(system_ca, "rb") as src:
+                out.write(src.read())
+                out.write(b"\n")
+        with open(ca_pem, "rb") as src:
+            out.write(src.read())
+            out.write(b"\n")
+    with contextlib.suppress(OSError):
+        os.chmod(bundle, 0o644)
+    return bundle
+
+
 def _ensure_ca(ca_pem: str, dry_run: bool) -> bool:
     """确保本地 CA 存在，返回是否可用。"""
     if os.path.exists(ca_pem):
@@ -146,14 +177,15 @@ def install(options: InstallOptions) -> int:
     # ---- 1. 命令行工具 ---------------------------------------------------
     say(f"安装命令行工具到 {bindir}")
     os.makedirs(bindir, exist_ok=True)
-    for name in ("gh-accel-get", "gh-accel-env"):
+    for name in ("gh-accel-get", "gh-accel-env", "docker-proxy.sh"):
         src = _find_file(name)
         if src is None:
             print(f"  跳过 {name}（未找到）")
             continue
-        shutil.copy2(src, os.path.join(bindir, name))
-        os.chmod(os.path.join(bindir, name), 0o755)
-        print(f"  {bindir}/{name}")
+        target = name if name.endswith(".sh") else name
+        shutil.copy2(src, os.path.join(bindir, target))
+        os.chmod(os.path.join(bindir, target), 0o755)
+        print(f"  {bindir}/{target}")
     wrapper = os.path.join(bindir, "gh-accel")
     with open(wrapper, "w", encoding="utf-8") as fh:
         fh.write(
@@ -196,6 +228,10 @@ def install(options: InstallOptions) -> int:
             print(f"警告：无法生成 CA（{ca_pem}），客户端可能无法验证证书", file=sys.stderr)
         else:
             print(f"  CA  {ca_pem}")
+            # 客户端要的是「系统 CA + 本地 CA」的合集：curl 的 cacert 与
+            # Go 的 SSL_CERT_FILE 都是替换而非追加
+            bundle = build_ca_bundle(ca_pem)
+            print(f"  CA bundle（系统 CA + 本地 CA）  {bundle}")
 
         proxy = f"http://127.0.0.1:{options.port}"
         if shutil.which("git"):
@@ -210,7 +246,7 @@ def install(options: InstallOptions) -> int:
             path = os.path.join(_expand("~"), ".curlrc")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("# 通过 gh-accel 代理访问 GitHub\n")
-                fh.write(f"cacert = {ca_pem}\n")
+                fh.write(f"cacert = {bundle}\n")
                 fh.write(f'proxy = "{proxy}"\n')
             print(f"  curl  {path}")
 
@@ -220,7 +256,7 @@ def install(options: InstallOptions) -> int:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("# 通过 gh-accel 代理访问 GitHub\n")
-                fh.write(f"ca_certificate = {ca_pem}\n")
+                fh.write(f"ca_certificate = {bundle}\n")
                 fh.write(f"https_proxy = {proxy}\n")
             print(f"  wget  {path}")
 

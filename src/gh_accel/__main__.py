@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 
 from .config import load_config
 from .server import make_server
@@ -44,7 +45,10 @@ def main(argv: list[str] | None = None) -> int:
 
     def _shutdown(_signum, _frame):
         log.info("收到停止信号，退出")
-        server.shutdown()
+        # ``shutdown()`` 会等待 ``serve_forever()`` 的主循环退出；而信号处理
+        # 函数本身就在那个主线程里执行，直接调用会自己等自己 —— 死锁。
+        # 必须另起一个线程来调用，这也是 http.server 文档里的要求。
+        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)

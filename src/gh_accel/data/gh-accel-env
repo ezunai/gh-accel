@@ -8,7 +8,10 @@
 # 适用于任何支持 https_proxy + SSL_CERT_FILE 的程序
 # （pip / uv / cargo / npm / node / python / go 等）
 
-CA="${GH_ACCEL_CA:-$HOME/.config/gh-accel/certs/ca.pem}"
+# 注意: 这里必须用「系统 CA + 本地 CA」的合集。curl 的 cacert 与 Go 的
+# SSL_CERT_FILE 都是**替换**默认 CA 列表而非追加，只给本地 CA 会导致
+# 直连任何其它站点都因缺根证书而校验失败。
+CA="${GH_ACCEL_CA:-$HOME/.config/gh-accel/certs/ca-bundle.pem}"
 PROXY="${GH_ACCEL_URL:-http://127.0.0.1:19770}"
 
 cat <<EOF

@@ -23,6 +23,8 @@ def config(tmp_path: Path) -> Config:
         cache_dir=str(tmp_path / "cache"),
         certs_dir=str(tmp_path / "certs"),
         sources_file=str(tmp_path / "sources.json"),
+        registries_file=str(tmp_path / "registries.json"),
+        mirror_port=0,
         timeout=5.0,
         probe_timeout=3.0,
         probe_max_duration=2.0,
