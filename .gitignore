@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 运行时数据（正常在 ~/.cache/mise-gh-proxy，不会出现在仓库里）
+# 万一有人把缓存目录放到了仓库内，也不应提交
+cache/
+certs/
+files/
+sources.json
+
+# 编辑器
+.idea/
+.vscode/
+*.swp

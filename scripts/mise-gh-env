@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# 导出使用 mise 加速代理所需的环境变量
+#
+# 用法:
+#   eval "$(mise-gh-env)"        # 在当前 shell 生效
+#   eval "$(mise-gh-env)" && pip install xxx
+#
+# 适用于任何支持 https_proxy + SSL_CERT_FILE 的程序
+# （pip / uv / cargo / npm / node / python / go 等）
+
+CA="${MISE_GH_PROXY_CA:-$HOME/.cache/mise-gh-proxy/certs/ca.pem}"
+PROXY="${MISE_GH_PROXY_URL:-http://127.0.0.1:19770}"
+
+cat <<EOF
+export https_proxy="$PROXY"
+export http_proxy="$PROXY"
+export HTTPS_PROXY="$PROXY"
+export HTTP_PROXY="$PROXY"
+export SSL_CERT_FILE="$CA"
+export REQUESTS_CA_BUNDLE="$CA"
+export CURL_CA_BUNDLE="$CA"
+export NODE_EXTRA_CA_CERTS="$CA"
+export GIT_SSL_CAINFO="$CA"
+EOF
