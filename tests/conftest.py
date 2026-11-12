@@ -11,7 +11,7 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from mise_gh_proxy.config import Config  # noqa: E402
+from gh_accel.config import Config  # noqa: E402
 
 
 @pytest.fixture()
@@ -20,7 +20,8 @@ def config(tmp_path: Path) -> Config:
     return Config(
         host="127.0.0.1",
         port=0,
-        cache_dir=str(tmp_path),
+        cache_dir=str(tmp_path / "cache"),
+        certs_dir=str(tmp_path / "certs"),
         timeout=5.0,
         probe_timeout=3.0,
         probe_max_duration=2.0,

@@ -43,7 +43,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     """处理代理请求。"""
 
     protocol_version = "HTTP/1.1"
-    server_version = "mise-gh-proxy/1.0"
+    server_version = "gh-accel/1.0"
 
     # 由 make_server 注入
     config: Config

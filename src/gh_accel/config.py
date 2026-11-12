@@ -1,6 +1,6 @@
 """配置与常量。
 
-所有可调参数集中在此，环境变量前缀统一为 ``MISE_GH_PROXY_``。
+所有可调参数集中在此，环境变量前缀统一为 ``GH_ACCEL_``。
 """
 
 from __future__ import annotations
@@ -128,7 +128,11 @@ class Config:
 
     host: str
     port: int
+    #: 可随时删除的缓存（下载的文件、源偏好）
     cache_dir: str
+    #: 持久凭据（CA 私钥与证书）。不能放在 cache_dir —— 缓存被清理工具
+    #: 删除后，客户端（curl/wget/git）的信任会同时失效。
+    certs_dir: str
     #: 上游请求超时（秒）
     timeout: float
     #: 竞速探测的单源超时（秒）
@@ -148,7 +152,7 @@ class Config:
 
     @property
     def cert_dir(self) -> str:
-        return os.path.join(self.cache_dir, "certs")
+        return self.certs_dir
 
     @property
     def source_cache_file(self) -> str:
@@ -156,11 +160,11 @@ class Config:
 
     @property
     def ca_pem(self) -> str:
-        return os.path.join(self.cert_dir, "ca.pem")
+        return os.path.join(self.certs_dir, "ca.pem")
 
     @property
     def ca_key(self) -> str:
-        return os.path.join(self.cert_dir, "ca.key")
+        return os.path.join(self.certs_dir, "ca.key")
 
     @property
     def base_url(self) -> str:
@@ -184,15 +188,14 @@ def _env_float(name: str, default: float) -> float:
 def load_config() -> Config:
     """从环境变量读取配置。"""
     return Config(
-        host=os.environ.get("MISE_GH_PROXY_HOST", "127.0.0.1"),
-        port=_env_int("MISE_GH_PROXY_PORT", 19770),
-        cache_dir=os.path.expanduser(
-            os.environ.get("MISE_GH_PROXY_CACHE", "~/.cache/mise-gh-proxy")
-        ),
-        timeout=_env_float("MISE_GH_PROXY_TIMEOUT", 25.0),
-        probe_timeout=_env_float("MISE_GH_PROXY_PROBE_TIMEOUT", 12.0),
-        probe_max_duration=_env_float("MISE_GH_PROXY_PROBE_MAX", 5.0),
-        probe_bytes=_env_int("MISE_GH_PROXY_PROBE_BYTES", 1024 * 1024),
-        max_cache_bytes=_env_int("MISE_GH_PROXY_MAX_CACHE", 2 * 1024**3),
-        race_limit=_env_int("MISE_GH_PROXY_RACE_LIMIT", 4),
+        host=os.environ.get("GH_ACCEL_HOST", "127.0.0.1"),
+        port=_env_int("GH_ACCEL_PORT", 19770),
+        cache_dir=os.path.expanduser(os.environ.get("GH_ACCEL_CACHE", "~/.cache/gh-accel")),
+        certs_dir=os.path.expanduser(os.environ.get("GH_ACCEL_CERTS", "~/.config/gh-accel/certs")),
+        timeout=_env_float("GH_ACCEL_TIMEOUT", 25.0),
+        probe_timeout=_env_float("GH_ACCEL_PROBE_TIMEOUT", 12.0),
+        probe_max_duration=_env_float("GH_ACCEL_PROBE_MAX", 5.0),
+        probe_bytes=_env_int("GH_ACCEL_PROBE_BYTES", 1024 * 1024),
+        max_cache_bytes=_env_int("GH_ACCEL_MAX_CACHE", 2 * 1024**3),
+        race_limit=_env_int("GH_ACCEL_RACE_LIMIT", 4),
     )

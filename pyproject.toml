@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mise-gh-proxy"
+name = "gh-accel"
 version = "1.0.0"
-description = "本地 GitHub 下载加速代理：国内镜像优先、多源竞速、完整性校验、本地缓存"
+description = "gh-accel —— 本地 GitHub 下载加速代理：国内镜像优先、多源竞速、完整性校验、本地缓存"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "ZhangJun", email = "ezunai@126.com" }]
-keywords = ["mise", "github", "proxy", "mirror", "accelerator"]
+keywords = ["github", "proxy", "mirror", "accelerator", "download"]
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
@@ -24,7 +24,7 @@ dependencies = []
 dev = ["pytest>=7.0", "ruff>=0.5"]
 
 [project.scripts]
-mise-gh-mirror = "mise_gh_proxy.cli:main"
+gh-accel = "gh_accel.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

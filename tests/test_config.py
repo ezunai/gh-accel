@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from mise_gh_proxy.config import (
+from gh_accel.config import (
     API_PATH_RE,
     API_SOURCES,
     GH_PATH_RE,
@@ -71,28 +71,43 @@ class TestPathRegex:
 class TestLoadConfig:
     def test_defaults(self, monkeypatch) -> None:
         for key in list(os.environ):
-            if key.startswith("MISE_GH_PROXY_"):
+            if key.startswith("GH_ACCEL_"):
                 monkeypatch.delenv(key, raising=False)
         cfg = load_config()
         assert cfg.host == "127.0.0.1"
         assert cfg.port == 19770
-        assert cfg.cache_dir.endswith("mise-gh-proxy")
+        assert cfg.cache_dir.endswith("gh-accel")
 
     def test_env_override(self, monkeypatch) -> None:
-        monkeypatch.setenv("MISE_GH_PROXY_PORT", "12345")
-        monkeypatch.setenv("MISE_GH_PROXY_TIMEOUT", "7.5")
+        monkeypatch.setenv("GH_ACCEL_PORT", "12345")
+        monkeypatch.setenv("GH_ACCEL_TIMEOUT", "7.5")
         cfg = load_config()
         assert cfg.port == 12345
         assert cfg.timeout == 7.5
 
     def test_invalid_env_falls_back(self, monkeypatch) -> None:
-        monkeypatch.setenv("MISE_GH_PROXY_PORT", "not-a-number")
+        monkeypatch.setenv("GH_ACCEL_PORT", "not-a-number")
         assert load_config().port == 19770
 
     def test_derived_paths(self, tmp_path, monkeypatch) -> None:
-        monkeypatch.setenv("MISE_GH_PROXY_CACHE", str(tmp_path))
+        monkeypatch.setenv("GH_ACCEL_CACHE", str(tmp_path / "cache"))
+        monkeypatch.setenv("GH_ACCEL_CERTS", str(tmp_path / "certs"))
         cfg = load_config()
-        assert cfg.file_cache_dir == str(tmp_path / "files")
+        assert cfg.file_cache_dir == str(tmp_path / "cache" / "files")
         assert cfg.cert_dir == str(tmp_path / "certs")
         assert cfg.ca_pem.endswith("ca.pem")
         assert cfg.base_url.startswith("http://127.0.0.1:")
+
+    def test_certs_are_outside_cache_dir(self, monkeypatch) -> None:
+        """CA 是持久凭据，不能放在可被清理的 cache_dir 里。"""
+        monkeypatch.setenv("GH_ACCEL_CACHE", "/tmp/x/cache")
+        monkeypatch.setenv("GH_ACCEL_CERTS", "/tmp/x/certs")
+        cfg = load_config()
+        assert not cfg.cert_dir.startswith(cfg.cache_dir)
+        assert not cfg.ca_pem.startswith(cfg.cache_dir)
+
+    def test_certs_default_is_config_dir(self, monkeypatch) -> None:
+        for key in list(os.environ):
+            if key.startswith("GH_ACCEL_"):
+                monkeypatch.delenv(key, raising=False)
+        assert load_config().certs_dir.endswith("/.config/gh-accel/certs")

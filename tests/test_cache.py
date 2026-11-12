@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mise_gh_proxy.cache import FileCache, SourcePreference
+from gh_accel.cache import FileCache, SourcePreference
 
 
 class TestSourcePreference:

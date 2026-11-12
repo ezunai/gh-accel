@@ -24,7 +24,7 @@ __all__ = ["CertificateAuthority"]
 
 log = logging.getLogger(__name__)
 
-_CA_SUBJECT = "/CN=mise-gh-proxy local CA"
+_CA_SUBJECT = "/CN=gh-accel local CA"
 _CA_DAYS = "3650"
 _EXT_SECTION = "v3_req"
 

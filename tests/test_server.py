@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from mise_gh_proxy.server import ProxyHandler
+from gh_accel.server import ProxyHandler
 
 
 @pytest.fixture()

@@ -1,4 +1,4 @@
-"""命令行入口：``mise-gh-mirror``。
+"""命令行入口：``gh-accel``。
 
 子命令：
 
@@ -25,7 +25,7 @@ from .config import RELEASE_SOURCES, Config, load_config
 
 __all__ = ["main"]
 
-SERVICE = "mise-gh-proxy.service"
+SERVICE = "gh-accel.service"
 SAMPLE_OWNER = "astral-sh"
 SAMPLE_REPO = "uv"
 SAMPLE_TAG = "0.13.7"
@@ -51,7 +51,9 @@ def cmd_status(config: Config) -> int:
 
     cache = FileCache(config.file_cache_dir, config.max_cache_bytes)
     count, total = cache.stats()
-    print(f"下载缓存: {count} 个文件, {_fmt_size(total)}  (mise-gh-mirror clean 可清理)")
+    print(f"下载缓存: {count} 个文件, {_fmt_size(total)}  (gh-accel clean 可清理)")
+
+    print(f"CA 凭据: {config.ca_pem}")
 
     preference = SourcePreference(config.source_cache_file)
     records = preference.all()
@@ -78,7 +80,7 @@ def cmd_test(config: Config) -> int:
         url = source.url(owner=SAMPLE_OWNER, repo=SAMPLE_REPO, tag=SAMPLE_TAG, file=SAMPLE_FILE)
         request = urllib.request.Request(url)
         request.add_header("Range", f"bytes=0-{PROBE_BYTES - 1}")
-        request.add_header("User-Agent", "mise-gh-mirror/1.0")
+        request.add_header("User-Agent", "gh-accel/1.0")
         started = time.time()
         try:
             response = urllib.request.urlopen(request, timeout=PROBE_TIMEOUT)
@@ -159,7 +161,7 @@ COMMANDS = {
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="mise-gh-mirror", description="mise GitHub 下载代理的管理工具"
+        prog="gh-accel", description="gh-accel —— GitHub 下载加速代理的管理工具"
     )
     parser.add_argument(
         "command",

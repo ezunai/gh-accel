@@ -1,4 +1,4 @@
-# mise-gh-proxy 开发辅助
+# gh-accel 开发辅助
 #
 #   make install    安装到当前 Python 环境（editable）
 #   make test       跑测试
@@ -33,14 +33,14 @@ lint:  ## 静态检查
 check: test lint  ## 测试 + 检查
 
 service:  ## 安装并重启 systemd user 服务
-	install -Dm644 systemd/mise-gh-proxy.service $(SERVICE_DIR)/mise-gh-proxy.service
+	install -Dm644 systemd/gh-accel.service $(SERVICE_DIR)/gh-accel.service
 	systemctl --user daemon-reload
-	systemctl --user restart mise-gh-proxy.service
-	systemctl --user status mise-gh-proxy.service --no-pager
+	systemctl --user restart gh-accel.service
+	systemctl --user status gh-accel.service --no-pager
 
 uninstall:  ## 停用并移除 systemd user 服务
-	systemctl --user disable --now mise-gh-proxy.service || true
-	rm -f $(SERVICE_DIR)/mise-gh-proxy.service
+	systemctl --user disable --now gh-accel.service || true
+	rm -f $(SERVICE_DIR)/gh-accel.service
 	systemctl --user daemon-reload
 
 clean:  ## 清理构建产物

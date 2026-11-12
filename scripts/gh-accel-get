@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# 通过本地 mise 加速代理下载 GitHub 上的文件
+# 通过本地 gh-accel 代理下载 GitHub 上的文件
 #
 # 用法:
-#   mise-gh-get <github-url> [输出路径]
-#   mise-gh-get <github-url>            # 输出到 stdout
+#   gh-accel-get <github-url> [输出路径]
+#   gh-accel-get <github-url>            # 输出到 stdout
 #
 # 例:
-#   mise-gh-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
-#   mise-gh-get https://raw.githubusercontent.com/owner/repo/main/script.sh | bash
+#   gh-accel-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
+#   gh-accel-get https://raw.githubusercontent.com/owner/repo/main/script.sh | bash
 #
-# 走的是与 mise 相同的代理：国内镜像优先 -> 多源竞速 -> 长度校验 -> 本地缓存
+# 走的是与 mise 相同的代理链路：国内镜像优先 -> 多源竞速 -> 长度校验 -> 本地缓存
 
 set -euo pipefail
 
-PORT="${MISE_GH_PROXY_PORT:-19770}"
+PORT="${GH_ACCEL_PORT:-19770}"
 BASE="http://127.0.0.1:${PORT}"
 
 usage() {
   cat >&2 <<'EOF'
-用法: mise-gh-get <github-url> [输出路径]
+用法: gh-accel-get <github-url> [输出路径]
 
 支持的 URL 形式:
   https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
   https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<file>
 
 例:
-  mise-gh-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
-  mise-gh-get https://raw.githubusercontent.com/owner/repo/main/install.sh > install.sh
+  gh-accel-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
+  gh-accel-get https://raw.githubusercontent.com/owner/repo/main/install.sh > install.sh
 EOF
   exit 1
 }

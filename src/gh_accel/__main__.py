@@ -1,4 +1,4 @@
-"""``python -m mise_gh_proxy`` —— 启动代理服务。"""
+"""``python -m gh_accel`` —— 启动代理服务。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_config()
     _setup_logging(verbose)
-    log = logging.getLogger("mise_gh_proxy")
+    log = logging.getLogger("gh_accel")
 
     os.makedirs(config.file_cache_dir, exist_ok=True)
     os.makedirs(config.cert_dir, exist_ok=True)
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         log.warning("无法生成 CA，MITM(HTTPS 代理) 模式不可用")
 
     server = make_server(config)
-    log.info("mise-gh-proxy 监听于 http://%s:%d", config.host, config.port)
+    log.info("gh-accel 监听于 http://%s:%d", config.host, config.port)
 
     def _shutdown(_signum, _frame):
         log.info("收到停止信号，退出")

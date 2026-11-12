@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from mise_gh_proxy.config import Source
-from mise_gh_proxy.fetcher import Fetcher, clean_headers, expected_size
+from gh_accel.config import Source
+from gh_accel.fetcher import Fetcher, clean_headers, expected_size
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):

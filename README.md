@@ -1,4 +1,4 @@
-# mise-gh-proxy
+# gh-accel
 
 本地 GitHub 下载加速代理。
 
@@ -6,6 +6,17 @@
 下载导向本地代理，按「**国内镜像优先 → 多源并发竞速 → 长度校验 → 本地缓存**」
 工作，并通过 **MITM（CONNECT 隧道）** 把加速能力开放给 curl / wget / git /
 python 等客户端。
+
+### 为什么叫 gh-accel
+
+早期叫 `mise-gh-proxy`，但名字与实际能力不符：
+
+* 服务对象远不止 mise —— curl / wget / git / python / uv 都通过 `https_proxy`
+  接入，mise 只是其中一个使用场景。
+* `mise` 前缀会让人以为这是 mise 的插件或扩展，实际上它完全独立，靠
+  `url_replacements` 这一个配置项与之对接。
+* `gh-accel`（GitHub accelerator）直接点出「GitHub 加速」这个本质，也不与
+  上游加速服务名（如 `gh-proxy.cc`）混淆。
 
 ## 效果
 
@@ -22,30 +33,39 @@ python 等客户端。
 ## 项目结构
 
 ```
-mise-gh-proxy/
+gh-accel/
 ├── README.md
-├── LICENSE                     MIT
-├── Makefile                    开发辅助（install/test/lint/service）
-├── pyproject.toml              包元数据与工具配置
+├── LICENSE                    MIT
+├── Makefile                   开发辅助（install/test/lint/service）
+├── pyproject.toml             包元数据与工具配置
 ├── systemd/
-│   └── mise-gh-proxy.service   systemd user unit
+│   └── gh-accel.service       systemd user unit
 ├── scripts/
-│   ├── mise-gh-get             命令行下载（走代理）
-│   └── mise-gh-env             导出代理与 CA 环境变量
-├── src/mise_gh_proxy/
+│   ├── gh-accel-get           命令行下载（走代理）
+│   └── gh-accel-env           导出代理与 CA 环境变量
+├── src/gh_accel/
 │   ├── __init__.py
-│   ├── __main__.py             入口：python -m mise_gh_proxy
-│   ├── config.py               配置常量与源池
-│   ├── certificates.py          本地 CA 与按 SNI 动态签发
-│   ├── cache.py                源偏好缓存 + 文件缓存
-│   ├── fetcher.py              探测、完整下载、并发竞速
-│   ├── server.py               HTTP 服务（明文路由 + MITM）
-│   └── cli.py                  mise-gh-mirror 的实现
-└── tests/                      47 个测试
+│   ├── __main__.py            入口：python -m gh_accel
+│   ├── config.py              配置常量与源池
+│   ├── certificates.py        本地 CA 与按 SNI 动态签发
+│   ├── cache.py               源偏好缓存 + 文件缓存
+│   ├── fetcher.py             探测、完整下载、并发竞速
+│   ├── server.py              HTTP 服务（明文路由 + MITM）
+│   └── cli.py                 gh-accel 子命令的实现
+└── tests/                     47 个测试
 ```
 
-**源码与运行时数据分离**：源码在本目录；CA、下载缓存、源偏好记录在
-`~/.cache/mise-gh-proxy/`。重建安装只需拷源码，不会丢 CA。
+**源码与运行时数据分离**：源码在本目录；运行时数据按「可重建」与「不可重建」
+分开放：
+
+| 数据 | 位置 | 语义 |
+| --- | --- | --- |
+| CA 私钥与证书 | `~/.config/gh-accel/certs/` | 持久凭据，删了客户端信任就失效 |
+| 下载的文件缓存 | `~/.cache/gh-accel/files/` | 可随时重建（重新下载） |
+| 源偏好记录 | `~/.cache/gh-accel/sources.json` | 无所谓 |
+
+CA 特意**不**放在 `~/.cache/` —— XDG 语义下那是「可被清理工具删除的非重要
+数据」，而 CA 一旦被清理，curl / wget / git / python 的信任会同时失效。
 
 ## 安装
 
@@ -60,15 +80,15 @@ make check
 命令行入口不依赖 pip 安装，用 wrapper 直接调用源码：
 
 ```bash
-install -Dm755 scripts/mise-gh-get ~/.local/bin/mise-gh-get
-install -Dm755 scripts/mise-gh-env ~/.local/bin/mise-gh-env
-cat > ~/.local/bin/mise-gh-mirror <<'EOF'
+install -Dm755 scripts/gh-accel-get ~/.local/bin/gh-accel-get
+install -Dm755 scripts/gh-accel-env ~/.local/bin/gh-accel-env
+cat > ~/.local/bin/gh-accel <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="${MISE_GH_PROXY_HOME:-$HOME/Code/personal/mise-gh-proxy}"
-exec env PYTHONPATH="$ROOT/src" python3 -m mise_gh_proxy.cli "$@"
+ROOT="${GH_ACCEL_HOME:-$HOME/Code/personal/gh-accel}"
+exec env PYTHONPATH="$ROOT/src" python3 -m gh_accel.cli "$@"
 EOF
-chmod +x ~/.local/bin/mise-gh-mirror
+chmod +x ~/.local/bin/gh-accel
 ```
 
 服务安装：
@@ -102,7 +122,7 @@ mise 的 `url_replacements` 把 URL 改写到 `/gh/`、`/raw/`、`/api/` 前缀�
 URL 路径。客户端需信任该 CA：
 
 ```bash
-eval "$(mise-gh-env)"     # 导出 https_proxy / SSL_CERT_FILE 等全套变量
+eval "$(gh-accel-env)"     # 导出 https_proxy / SSL_CERT_FILE 等全套变量
 ```
 
 MITM 下的路由：
@@ -123,7 +143,7 @@ MITM 下的路由：
 | git | `~/.gitconfig`：`http.https://github.com/.proxy` + `http.sslCAInfo` | 按 URL 匹配，**仅 github.com** 走代理 |
 | curl | `~/.curlrc`：`cacert` + `proxy` | 全局代理 |
 | wget | `~/.config/wget/wgetrc`：`ca_certificate` + `https_proxy` | 全局代理 |
-| python / uv / pip | `eval "$(mise-gh-env)"` | 按需启用 |
+| python / uv / pip | `eval "$(gh-accel-env)"` | 按需启用 |
 | npm / node / cargo / go | 各自的国内镜像 | 见下表 |
 
 注意 wget 1.25 读的是 XDG 路径 `~/.config/wget/wgetrc`，不是 `~/.wgetrc`。
@@ -203,34 +223,35 @@ curl / wget 的代理是全局的（非 GitHub 流量经代理 passthrough 转�
 ## 命令行
 
 ```bash
-mise-gh-mirror status     # 服务状态、缓存占用、各仓库上次可用源
-mise-gh-mirror test       # 实测各候选源速度
-mise-gh-mirror sources    # 列出源池与优先级
-mise-gh-mirror clean      # 清理下载缓存
-mise-gh-mirror logs       # 查看代理日志
+gh-accel status     # 服务状态、缓存占用、各仓库上次可用源
+gh-accel test       # 实测各候选源速度
+gh-accel sources    # 列出源池与优先级
+gh-accel clean      # 清理下载缓存
+gh-accel logs       # 查看代理日志
 
-mise-gh-get <github-url>  # 命令行走代理下载 release / raw 文件
-eval "$(mise-gh-env)"      # 给当前 shell 注入代理与 CA 变量
+gh-accel-get <github-url>  # 命令行走代理下载 release / raw 文件
+eval "$(gh-accel-env)"      # 给当前 shell 注入代理与 CA 变量
 
-systemctl --user status mise-gh-proxy.service
-systemctl --user restart mise-gh-proxy.service
+systemctl --user status gh-accel.service
+systemctl --user restart gh-accel.service
 ```
 
 ## 配置项
 
-全部通过环境变量调整，前缀 `MISE_GH_PROXY_`：
+全部通过环境变量调整，前缀 `GH_ACCEL_`：
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `MISE_GH_PROXY_HOST` | `127.0.0.1` | 监听地址 |
-| `MISE_GH_PROXY_PORT` | `19770` | 监听端口 |
-| `MISE_GH_PROXY_CACHE` | `~/.cache/mise-gh-proxy` | 运行时数据目录 |
-| `MISE_GH_PROXY_TIMEOUT` | `25` | 上游请求超时（秒） |
-| `MISE_GH_PROXY_PROBE_TIMEOUT` | `12` | 竞速探测单源超时（秒） |
-| `MISE_GH_PROXY_PROBE_MAX` | `5` | 探测总时长上限（秒） |
-| `MISE_GH_PROXY_PROBE_BYTES` | `1048576` | 探测样本字节数 |
-| `MISE_GH_PROXY_MAX_CACHE` | `2147483648` | 缓存总大小上限（字节） |
-| `MISE_GH_PROXY_RACE_LIMIT` | `4` | 并发竞速的源数量 |
+| `GH_ACCEL_HOST` | `127.0.0.1` | 监听地址 |
+| `GH_ACCEL_PORT` | `19770` | 监听端口 |
+| `GH_ACCEL_CACHE` | `~/.cache/gh-accel` | 可重建的缓存目录 |
+| `GH_ACCEL_CERTS` | `~/.config/gh-accel/certs` | CA 凭据目录（持久） |
+| `GH_ACCEL_TIMEOUT` | `25` | 上游请求超时（秒） |
+| `GH_ACCEL_PROBE_TIMEOUT` | `12` | 竞速探测单源超时（秒） |
+| `GH_ACCEL_PROBE_MAX` | `5` | 探测总时长上限（秒） |
+| `GH_ACCEL_PROBE_BYTES` | `1048576` | 探测样本字节数 |
+| `GH_ACCEL_MAX_CACHE` | `2147483648` | 缓存总大小上限（字节） |
+| `GH_ACCEL_RACE_LIMIT` | `4` | 并发竞速的源数量 |
 
 ## 安全说明
 
@@ -240,8 +261,8 @@ MITM 意味着代理能看到并改写这些客户端的 HTTPS 明文。本地 C
 （这样所有程序免配置即可使用），需要 root：
 
 ```bash
-sudo cp ~/.cache/mise-gh-proxy/certs/ca.pem \
-     /usr/local/share/ca-certificates/mise-gh-proxy.crt
+sudo cp ~/.config/gh-accel/certs/ca.pem \
+     /usr/local/share/ca-certificates/gh-accel.crt
 sudo update-ca-certificates
 ```
 

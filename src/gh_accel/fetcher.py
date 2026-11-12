@@ -3,7 +3,7 @@
 两个关键设计：
 
 **长度校验。** 部分加速服务会截断大文件（返回 ``206`` 但 ``Content-Range``
-声明的总大小远大于实际收到的字节数）。不校验的话，mise 侧的 checksum 校验
+声明的总大小远大于实际收到的字节数）。不校验的话，下游的 checksum 校验
 会失败，表现为安装报 digest mismatch。这里据此判定该源不可用并换源。
 
 **完整下载竞速，而非「先测速再下载」。** 测速阶段连接建立开销占比高、且各
@@ -107,7 +107,7 @@ class Fetcher:
     ):
         """发起请求，返回 urllib 的响应对象。"""
         request = urllib.request.Request(url, data=data, method=method)
-        request.add_header("User-Agent", "mise-gh-proxy/1.0")
+        request.add_header("User-Agent", "gh-accel/1.0")
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         return urllib.request.urlopen(request, timeout=timeout or self._config.timeout)
