@@ -54,5 +54,5 @@
 - CA 只写入用户级配置（`~/.gitconfig`、`~/.curlrc`、`~/.config/wget/wgetrc`），
   **不会**装进系统信任库，因此系统级其它程序不受影响。
 
-[Unreleased]: https://github.com/OWNER/gh-accel/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/OWNER/gh-accel/releases/tag/v1.0.0
+[Unreleased]: https://github.com/osmos/gh-accel/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/osmos/gh-accel/releases/tag/v1.0.0

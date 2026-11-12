@@ -39,8 +39,9 @@ gh-accel/
 ├── Makefile                   开发辅助（install/test/lint/service）
 ├── pyproject.toml             包元数据与工具配置
 ├── systemd/
-│   └── gh-accel.service       systemd user unit
+│   └── gh-accel.service       systemd user unit（唯一来源）
 ├── scripts/
+│   ├── install.sh             一键安装（install.sh 的薄包装）
 │   ├── gh-accel-get           命令行下载（走代理）
 │   └── gh-accel-env           导出代理与 CA 环境变量
 ├── src/gh_accel/
@@ -51,8 +52,10 @@ gh-accel/
 │   ├── cache.py               源偏好缓存 + 文件缓存
 │   ├── fetcher.py             探测、完整下载、并发竞速
 │   ├── server.py              HTTP 服务（明文路由 + MITM）
-│   └── cli.py                 gh-accel 子命令的实现
-└── tests/                     47 个测试
+│   ├── installer.py           安装逻辑（服务 + CA + 客户端配置）
+│   ├── cli.py                 gh-accel 子命令的实现
+│   └── data/                  打包进 wheel 的 unit 与脚本副本
+└── tests/                     57 个测试
 ```
 
 **源码与运行时数据分离**：源码在本目录；运行时数据按「可重建」与「不可重建」
@@ -72,8 +75,11 @@ CA 特意**不**放在 `~/.cache/` —— XDG 语义下那是「可被清理工�
 ### 一键脚本（推荐）
 
 ```bash
-# 从仓库安装
-curl -fsSL https://raw.githubusercontent.com/OWNER/gh-accel/main/scripts/install.sh | bash
+# Gitee 镜像（国内直连，推荐）
+curl -fsSL https://gitee.com/osmos/gh-accel/raw/main/scripts/install.sh | bash
+
+# GitHub（国内可能很慢，需先让代理生效）
+curl -fsSL https://raw.githubusercontent.com/osmos/gh-accel/main/scripts/install.sh | bash
 
 # 或本地
 ./scripts/install.sh
@@ -94,21 +100,28 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/gh-accel/main/scripts/install
 ### 手动安装
 
 ```bash
-git clone https://github.com/OWNER/gh-accel.git ~/Code/personal/gh-accel
+# Gitee 镜像（国内直连）
+git clone https://gitee.com/osmos/gh-accel.git ~/Code/personal/gh-accel
+
+# 或 GitHub
+git clone https://github.com/osmos/gh-accel.git ~/Code/personal/gh-accel
+
 cd ~/Code/personal/gh-accel
 make dev        # 开发依赖（pytest / ruff）
 make check      # 测试 + 静态检查
 make service    # 安装 unit + daemon-reload + restart
 ```
 
-### 从 PyPI 安装（只装库与 CLI）
+### 从 PyPI 安装
 
 ```bash
-pip install gh-accel      # 提供 gh_accel 包与 gh-accel 命令
+pip install gh-accel
+gh-accel install          # 装服务 + 生成 CA + 配置 curl/wget/git
 ```
 
-注意：PyPI 版本不含 systemd unit 与客户端配置，仍需手动执行
-`scripts/install.sh --no-service` 或自行配置。
+`gh-accel install` 与 `scripts/install.sh` 是同一份实现（前者是包内入口，
+后者是脚本包装），行为一致。选项：`--no-service`、`--no-client`、
+`--prefix`、`--root`、`--port`、`--dry-run`。
 
 命令行入口不依赖 pip 安装，用 wrapper 直接调用源码：
 
@@ -314,6 +327,11 @@ make build    # 构建 sdist + wheel
 CI（GitHub Actions）覆盖 Python 3.10-3.13 的测试矩阵、静态检查与打包；
 打 `v*` tag 时自动构建并发布到 PyPI（需配置 Trusted Publisher 或
 `PYPI_API_TOKEN` secret）。
+
+## 发布
+
+代码同时发布到 GitHub（主仓库）、Gitee（国内镜像）与 PyPI。完整流程见
+[PUBLISHING.md](PUBLISHING.md)。
 
 ## License
 

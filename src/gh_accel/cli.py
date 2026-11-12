@@ -159,16 +159,40 @@ COMMANDS = {
 }
 
 
+def cmd_install(config: Config, args: argparse.Namespace) -> int:
+    """安装服务并配置客户端。"""
+    from .installer import InstallOptions, install
+
+    options = InstallOptions(
+        prefix=args.prefix,
+        root=args.root or os.getcwd(),
+        port=args.port,
+        with_service=not args.no_service,
+        with_client=not args.no_client,
+        dry_run=args.dry_run,
+    )
+    return install(options)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="gh-accel", description="gh-accel —— GitHub 下载加速代理的管理工具"
     )
     parser.add_argument(
         "command",
-        choices=sorted(COMMANDS),
-        help="status=服务状态 test=测速 sources=源池 clean=清缓存 logs=日志",
+        choices=sorted(COMMANDS) + ["install"],
+        help="status=服务状态 test=测速 sources=源池 clean=清缓存 logs=日志 "
+        "install=安装服务并配置客户端",
     )
+    parser.add_argument("--prefix", default="~/.local", help="命令安装目录")
+    parser.add_argument("--root", default="", help="源码目录（默认当前目录）")
+    parser.add_argument("--port", type=int, default=19770, help="代理端口")
+    parser.add_argument("--no-service", action="store_true", help="不装 systemd 服务")
+    parser.add_argument("--no-client", action="store_true", help="不配客户端")
+    parser.add_argument("--dry-run", action="store_true", help="只打印不执行")
     args = parser.parse_args(argv)
+    if args.command == "install":
+        return cmd_install(load_config(), args)
     return COMMANDS[args.command](load_config())
 
 

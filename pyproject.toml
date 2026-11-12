@@ -30,10 +30,10 @@ dev = ["pytest>=7.0", "ruff>=0.5"]
 gh-accel = "gh_accel.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/gh-accel"
-Repository = "https://github.com/OWNER/gh-accel"
-Issues = "https://github.com/OWNER/gh-accel/issues"
-Changelog = "https://github.com/OWNER/gh-accel/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/osmos/gh-accel"
+Repository = "https://github.com/osmos/gh-accel"
+Issues = "https://github.com/osmos/gh-accel/issues"
+Changelog = "https://github.com/osmos/gh-accel/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -43,6 +43,9 @@ version = { attr = "gh_accel.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+gh_accel = ["data/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

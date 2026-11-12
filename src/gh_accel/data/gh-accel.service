@@ -1,0 +1,16 @@
+[Unit]
+Description=gh-accel —— GitHub 下载加速代理（国内镜像优先 + 多级回退）
+Documentation=file:@GH_ACCEL_ROOT@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@GH_ACCEL_ROOT@
+Environment=PYTHONPATH=@GH_ACCEL_ROOT@/src
+ExecStart=/usr/bin/python3 -m gh_accel
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

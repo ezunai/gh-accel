@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# 通过本地 gh-accel 代理下载 GitHub 上的文件
+#
+# 用法:
+#   gh-accel-get <github-url> [输出路径]
+#   gh-accel-get <github-url>            # 输出到 stdout
+#
+# 例:
+#   gh-accel-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
+#   gh-accel-get https://raw.githubusercontent.com/owner/repo/main/script.sh | bash
+#
+# 走的是与 mise 相同的代理链路：国内镜像优先 -> 多源竞速 -> 长度校验 -> 本地缓存
+
+set -euo pipefail
+
+PORT="${GH_ACCEL_PORT:-19770}"
+BASE="http://127.0.0.1:${PORT}"
+
+usage() {
+  cat >&2 <<'EOF'
+用法: gh-accel-get <github-url> [输出路径]
+
+支持的 URL 形式:
+  https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
+  https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<file>
+
+例:
+  gh-accel-get https://github.com/owner/repo/releases/download/v1.0/app.tar.gz
+  gh-accel-get https://raw.githubusercontent.com/owner/repo/main/install.sh > install.sh
+EOF
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+URL="$1"
+OUT="${2:-}"
+
+case "$URL" in
+  http*://github.com/*)
+    TARGET="${BASE}/gh/${URL#*://github.com/}"
+    ;;
+  http*://raw.githubusercontent.com/*)
+    TARGET="${BASE}/raw/${URL#*://raw.githubusercontent.com/}"
+    ;;
+  *)
+    echo "错误: 只支持 github.com 与 raw.githubusercontent.com 的 URL" >&2
+    echo "  收到: $URL" >&2
+    usage
+    ;;
+esac
+
+if [ -n "$OUT" ]; then
+  curl -fsSL --retry 3 --retry-delay 1 -o "$OUT" "$TARGET"
+  echo "已保存: $OUT ($(stat -c%s "$OUT") 字节)" >&2
+else
+  exec curl -fsSL --retry 3 --retry-delay 1 "$TARGET"
+fi
