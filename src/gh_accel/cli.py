@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 from .cache import FileCache, SourcePreference
-from .config import RELEASE_SOURCES, Config, load_config
+from .config import CHAINS, Config, Source, load_config
 
 __all__ = ["main"]
 
@@ -74,6 +74,10 @@ def cmd_status(config: Config) -> int:
 
 
 def cmd_test(config: Config) -> int:
+    from .sources import load_registry
+
+    registry = load_registry(config.sources_file)
+    sources = registry.for_chain("release")
     print(f"候选源实测 (取 {PROBE_BYTES // 1024 // 1024}MB 样本, 并发):")
 
     def probe(source):
@@ -99,8 +103,8 @@ def cmd_test(config: Config) -> int:
             return source.name, None, type(exc).__name__
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(RELEASE_SOURCES)) as pool:
-        for name, speed, extra in pool.map(probe, RELEASE_SOURCES):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        for name, speed, extra in pool.map(probe, sources):
             if speed is None:
                 print(f"  {name:<22} 不可用  ({extra})")
             else:
@@ -114,17 +118,86 @@ def cmd_test(config: Config) -> int:
     return 0
 
 
-def cmd_sources(_config: Config) -> int:
-    print("源池 (按优先级):")
-    for index, source in enumerate(RELEASE_SOURCES, 1):
-        note = ""
-        if source.name == "ustc":
-            note = "  # 国内镜像站, 速度最快但只覆盖部分仓库"
-        elif source.name == "direct":
-            note = "  # 官方直连, 最后兜底"
-        print(f"  {index}. {source.name:<22} {source.template.split('{')[0][:44]}...{note}")
+def cmd_sources(config: Config, args: argparse.Namespace) -> int:
+    """查看与编辑源池。"""
+    from .sources import load_registry
+
+    registry = load_registry(config.sources_file)
+
+    # ---- 编辑操作 ----
+    if args.add:
+        name = args.add
+        if not args.template:
+            print("错误: --add 需要同时给出 --template", file=sys.stderr)
+            return 2
+        template = args.template
+        chain = args.chain
+        templates = {chain: template}
+        if args.chains:
+            templates = dict.fromkeys(args.chains.split(","), template)
+        registry.set_source(
+            Source(name=name, templates=templates, priority=args.priority, builtin=False)
+        )
+        registry.save()
+        print(f"已添加源 {name} (链路: {', '.join(sorted(templates))})")
+        return 0
+
+    if args.remove:
+        if registry.remove_source(args.remove):
+            registry.save()
+            print(f"已删除源 {args.remove}")
+        else:
+            print(
+                f"错误: 无法删除 {args.remove}（不存在，或是内置源——内置源请用 --disable）",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
+    if args.disable:
+        if registry.disable(args.disable):
+            registry.save()
+            print(f"已禁用源 {args.disable}")
+        else:
+            print(f"错误: 未知源 {args.disable}", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.enable:
+        if registry.enable(args.enable):
+            registry.save()
+            print(f"已启用源 {args.enable}")
+        else:
+            print(f"错误: 未知源 {args.enable}", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.reset:
+        registry.reset()
+        registry.save()
+        print("已恢复内置源池")
+        return 0
+
+    # ---- 列出 ----
+    print(f"源池（配置文件: {config.sources_file}）")
+    for chain in CHAINS:
+        sources = registry.for_chain(chain)
+        print(f"\n  [{chain}] {len(sources)} 个源")
+        for index, source in enumerate(sources, 1):
+            flag = ""
+            if not source.builtin:
+                flag = " (自定义)"
+            template = source.templates[chain]
+            print(f"    {index}. {source.name:<22} p{source.priority:<4} {template[:52]}{flag}")
+    disabled = sorted(registry.disabled)
+    if disabled:
+        print(f"\n  已禁用: {', '.join(disabled)}")
     print("\n代理采用并发竞速: 同时下载多个源, 最先完整下载成功的胜出,")
     print("并做长度校验 (防止部分服务截断大文件), 结果写入本地缓存。")
+    print("\n编辑方式:")
+    print("  gh-accel sources --add <名字> --template <URL 模板> [--chains release,page]")
+    print("  gh-accel sources --disable <名字> | --enable <名字> | --remove <名字>")
+    print("  gh-accel sources --reset")
     return 0
 
 
@@ -185,6 +258,16 @@ def main(argv: list[str] | None = None) -> int:
         "install=安装服务并配置客户端",
     )
     parser.add_argument("--prefix", default="~/.local", help="命令安装目录")
+    # sources 子命令的编辑选项
+    parser.add_argument("--add", metavar="名字", help="新增一个源")
+    parser.add_argument("--remove", metavar="名字", help="删除一个自定义源")
+    parser.add_argument("--disable", metavar="名字", help="禁用一个源")
+    parser.add_argument("--enable", metavar="名字", help="启用一个源")
+    parser.add_argument("--reset", action="store_true", help="恢复内置源池")
+    parser.add_argument("--template", metavar="URL", help="源的 URL 模板")
+    parser.add_argument("--chains", metavar="a,b", help="适用的链路")
+    parser.add_argument("--chain", default="release", help="单个链路（默认 release）")
+    parser.add_argument("--priority", type=int, default=100, help="优先级，越小越靠前")
     parser.add_argument("--root", default="", help="源码目录（默认当前目录）")
     parser.add_argument("--port", type=int, default=19770, help="代理端口")
     parser.add_argument("--no-service", action="store_true", help="不装 systemd 服务")
@@ -193,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "install":
         return cmd_install(load_config(), args)
+    if args.command == "sources":
+        return cmd_sources(load_config(), args)
     return COMMANDS[args.command](load_config())
 
 

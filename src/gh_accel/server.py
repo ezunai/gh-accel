@@ -22,18 +22,15 @@ from .cache import FileCache, SourcePreference
 from .certificates import CertificateAuthority
 from .config import (
     API_PATH_RE,
-    API_SOURCES,
     GH_PATH_RE,
     GIT_PATH_RE,
     MITM_ROUTES,
-    PAGE_SOURCES,
     RAW_PATH_RE,
-    RAW_SOURCES,
     RELEASE_PATH_RE,
-    RELEASE_SOURCES,
     Config,
 )
 from .fetcher import Fetcher
+from .sources import SourceRegistry, load_registry
 
 __all__ = ["ProxyServer", "make_server"]
 
@@ -49,6 +46,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     # 由 make_server 注入
     config: Config
     fetcher: Fetcher
+    registry: SourceRegistry
     cache: FileCache
     preference: SourcePreference
     authority: CertificateAuthority
@@ -166,6 +164,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
 
     # ---- 明文路由 --------------------------------------------------------
+    def _sources(self, chain: str):
+        """取某条链路的源，必要时先热重载配置。"""
+        self.registry.reload_if_changed()
+        return self.registry.for_chain(chain)
+
     def _serve_release(self, key: dict[str, str], headers: dict[str, str]) -> None:
         canonical = ("https://github.com/{owner}/{repo}/releases/download/{tag}/{file}").format(
             **key
@@ -184,7 +187,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_file(cached, size, "application/octet-stream")
             return
 
-        result = self.fetcher.race(RELEASE_SOURCES, key, headers)
+        result = self.fetcher.race(self._sources("release"), "release", key, headers)
         if result is None:
             self._err(404, "not found in any source")
             return
@@ -212,7 +215,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_file(cached, size, "text/plain; charset=utf-8")
             return
 
-        result = self.fetcher.race(RAW_SOURCES, {"path": path}, headers)
+        result = self.fetcher.race(self._sources("raw"), "raw", {"path": path}, headers)
         if result is None:
             self._err(404, "not found in any source")
             return
@@ -231,8 +234,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_file(cached, size, "application/json")
             return
 
-        for source in API_SOURCES:
-            url = source.url(path=path)
+        for source in self._sources("api"):
+            url = source.url("api", path=path)
             result = self.fetcher.download(url, headers)
             if result is None:
                 log.info("源 %s: 失败或长度不符", source.name)
@@ -251,8 +254,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         直接按顺序尝试完整请求，不做探测 —— 探测既慢又会重复下载。
         """
-        for source in PAGE_SOURCES:
-            url = source.url(path=path)
+        for source in self._sources("page"):
+            url = source.url("page", path=path)
             try:
                 response = self.fetcher.open(
                     url, _clean(headers), "GET" if body is None else "POST", data=body
@@ -482,6 +485,7 @@ class ProxyServer(socketserver.ThreadingTCPServer):
 def make_server(config: Config) -> ProxyServer:
     """构造并返回配置好的服务器。"""
     fetcher = Fetcher(config)
+    registry = load_registry(config.sources_file)
     cache = FileCache(config.file_cache_dir, config.max_cache_bytes)
     preference = SourcePreference(config.source_cache_file)
     authority = CertificateAuthority(config.cert_dir, config.ca_pem, config.ca_key)
@@ -492,6 +496,7 @@ def make_server(config: Config) -> ProxyServer:
         {
             "config": config,
             "fetcher": fetcher,
+            "registry": registry,
             "cache": cache,
             "preference": preference,
             "authority": authority,

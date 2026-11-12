@@ -123,20 +123,20 @@ class TestDownload:
 
 class TestRace:
     def test_fastest_source_wins(self, config, upstream) -> None:
-        slow = Source("slow", f"{upstream}/file?mode=slow")
-        fast = Source("fast", f"{upstream}/file?mode=full")
+        slow = Source("slow", {"release": f"{upstream}/file?mode=slow"})
+        fast = Source("fast", {"release": f"{upstream}/file?mode=full"})
         fetcher = Fetcher(config)
-        result = fetcher.race([slow, fast], {}, limit=2)
+        result = fetcher.race([slow, fast], "release", {}, limit=2)
         assert result is not None
         assert result.source == "fast"
 
     def test_all_sources_failing(self, config) -> None:
         fetcher = Fetcher(config)
-        bad = Source("bad", "http://127.0.0.1:1/x")
-        assert fetcher.race([bad], {}, limit=1) is None
+        bad = Source("bad", {"release": "http://127.0.0.1:1/x"})
+        assert fetcher.race([bad], "release", {}, limit=1) is None
 
     def test_empty_pool(self, config) -> None:
-        assert Fetcher(config).race([], {}) is None
+        assert Fetcher(config).race([], "release", {}) is None
 
 
 class TestProbe:

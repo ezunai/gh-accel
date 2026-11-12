@@ -156,12 +156,16 @@ class Fetcher:
         return speed
 
     def rank_sources(
-        self, sources: Sequence[Source], key: dict[str, str], headers: dict[str, str] | None = None
+        self,
+        sources: Sequence[Source],
+        chain: str,
+        key: dict[str, str],
+        headers: dict[str, str] | None = None,
     ) -> list[tuple[float, Source]]:
         """并发探测各源，返回按速度降序的 (speed, source)。"""
 
         def probe(source: Source) -> tuple[Source, float | None]:
-            return source, self.probe_speed(source.url(**key), headers)
+            return source, self.probe_speed(source.url(chain, **key), headers)
 
         results: list[tuple[float, Source]] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(len(sources), 1)) as pool:
@@ -223,6 +227,7 @@ class Fetcher:
     def race(
         self,
         sources: Sequence[Source],
+        chain: str,
         key: dict[str, str],
         headers: dict[str, str] | None = None,
         limit: int | None = None,
@@ -237,7 +242,8 @@ class Fetcher:
         lock = threading.Lock()
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(candidates))
         futures = {
-            pool.submit(self.download, source.url(**key), headers): source for source in candidates
+            pool.submit(self.download, source.url(chain, **key), headers): source
+            for source in candidates
         }
         try:
             for future in concurrent.futures.as_completed(futures):

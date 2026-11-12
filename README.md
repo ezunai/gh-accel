@@ -248,6 +248,50 @@ curl / wget 的代理是全局的（非 GitHub 流量经代理 passthrough 转�
 - **CONNECT 请求要读完整头部** —— 只读 requestline 会让残留的明文 HTTP 头
   被 TLS 握手当成协议数据。
 
+## 自定义源池
+
+内置源之外可以增删自己的加速服务。配置文件在
+`~/.config/gh-accel/sources.json`（首次修改时自动创建）：
+
+```json
+{
+  "sources": {
+    "my-mirror": {
+      "templates": {
+        "release": "https://my.mirror/{owner}/{repo}/{tag}/{file}"
+      },
+      "priority": 15
+    }
+  },
+  "disabled": ["ghproxy.cfd"]
+}
+```
+
+也可以用命令行改（等价于编辑上面的文件）：
+
+```bash
+gh-accel sources                                     # 列出各链路的源
+gh-accel sources --add my-mirror \
+    --template "https://my.mirror/{owner}/{repo}/{tag}/{file}" \
+    --chain release --priority 15
+gh-accel sources --add my-proxy \
+    --template "https://my.proxy/{path}" --chains page,raw
+gh-accel sources --disable ghproxy.cfd                # 停用一个源
+gh-accel sources --enable ghproxy.cfd
+gh-accel sources --remove my-mirror                   # 删除自定义源
+gh-accel sources --reset                              # 恢复内置源池
+```
+
+说明：
+
+* **链路**：release（release 资产）、page（github.com 的其它路径，如 git
+  smart http）、raw（raw.githubusercontent.com）、api（api.github.com）。
+  一个源可同时服务多条链路，各链路的 URL 模板分别给出。
+* **priority** 越小越靠前，参与竞速的源按此排序。内置的 `direct` 是 999，
+  永远排最后兜底。
+* **内置源不能删除**，只能 `--disable`。
+* **改完立即生效**：代理每次取源前检查配置文件是否变化，无需重启服务。
+
 ## 其它生态的国内镜像
 
 | 生态 | 配置位置 | 镜像 |
@@ -274,6 +318,7 @@ gh-accel test       # 实测各候选源速度
 gh-accel sources    # 列出源池与优先级
 gh-accel clean      # 清理下载缓存
 gh-accel logs       # 查看代理日志
+gh-accel sources    # 查看/编辑源池
 
 gh-accel-get <github-url>  # 命令行走代理下载 release / raw 文件
 eval "$(gh-accel-env)"      # 给当前 shell 注入代理与 CA 变量

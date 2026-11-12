@@ -6,44 +6,62 @@ import os
 
 from gh_accel.config import (
     API_PATH_RE,
-    API_SOURCES,
+    CHAINS,
+    DEFAULT_SOURCES,
     GH_PATH_RE,
     GIT_PATH_RE,
-    PAGE_SOURCES,
     RAW_PATH_RE,
-    RAW_SOURCES,
     RELEASE_PATH_RE,
-    RELEASE_SOURCES,
     Source,
     load_config,
 )
 
 
-class TestSourceTemplates:
+class TestSource:
     def test_release_template_expands(self) -> None:
-        source = Source("x", "https://e/{owner}/{repo}/{tag}/{file}")
-        assert source.url(owner="o", repo="r", tag="t", file="f") == "https://e/o/r/t/f"
+        source = Source("x", {"release": "https://e/{owner}/{repo}/{tag}/{file}"})
+        assert source.url("release", owner="o", repo="r", tag="t", file="f") == "https://e/o/r/t/f"
 
     def test_path_template_expands(self) -> None:
-        source = Source("x", "https://e/{path}")
-        assert source.url(path="a/b") == "https://e/a/b"
+        source = Source("x", {"page": "https://e/{path}"})
+        assert source.url("page", path="a/b") == "https://e/a/b"
+
+    def test_chains_property(self) -> None:
+        source = Source("x", {"release": "a", "page": "b"})
+        assert set(source.chains) == {"release", "page"}
+
+    def test_serves(self) -> None:
+        source = Source("x", {"release": "a"})
+        assert source.serves("release")
+        assert not source.serves("raw")
 
 
-class TestSourcePools:
-    def test_release_pool_ends_with_direct(self) -> None:
-        assert RELEASE_SOURCES[-1].name == "direct"
+class TestDefaultSources:
+    def test_registry_non_empty(self) -> None:
+        assert DEFAULT_SOURCES
 
-    def test_release_pool_starts_with_domestic_mirror(self) -> None:
-        assert RELEASE_SOURCES[0].name == "ustc"
+    def test_source_names_unique(self) -> None:
+        names = [s.name for s in DEFAULT_SOURCES]
+        assert len(names) == len(set(names)), f"源名重复: {names}"
 
-    def test_pools_are_non_empty(self) -> None:
-        for pool in (RELEASE_SOURCES, PAGE_SOURCES, RAW_SOURCES, API_SOURCES):
-            assert pool, "源池不应为空"
+    def test_every_source_serves_a_known_chain(self) -> None:
+        for source in DEFAULT_SOURCES:
+            for chain in source.chains:
+                assert chain in CHAINS, f"{source.name} 声明了未知链路 {chain}"
 
-    def test_source_names_unique_per_pool(self) -> None:
-        for pool in (RELEASE_SOURCES, PAGE_SOURCES, RAW_SOURCES, API_SOURCES):
-            names = [s.name for s in pool]
-            assert len(names) == len(set(names)), f"源名重复: {names}"
+    def test_direct_is_last(self) -> None:
+        """直连必须是最后兜底。"""
+        direct = next(s for s in DEFAULT_SOURCES if s.name == "direct")
+        others = [s for s in DEFAULT_SOURCES if s.name != "direct"]
+        assert direct.priority > max(s.priority for s in others)
+
+    def test_domestic_mirror_first(self) -> None:
+        release = [s for s in DEFAULT_SOURCES if s.serves("release")]
+        assert release[0].name == "ustc"
+
+    def test_all_chains_have_at_least_one_source(self) -> None:
+        for chain in CHAINS:
+            assert any(s.serves(chain) for s in DEFAULT_SOURCES), f"{chain} 无可用源"
 
 
 class TestPathRegex:
@@ -52,7 +70,7 @@ class TestPathRegex:
         assert match
         assert match.groupdict() == {"owner": "o", "repo": "r", "tag": "v1.0", "file": "app.tar.gz"}
 
-    def test_release_path_rejects_traversal(self) -> None:
+    def test_release_path_rejects_trailing_slash(self) -> None:
         assert RELEASE_PATH_RE.match("/gh/o/r/releases/download/v1.0/") is None
 
     def test_raw_path(self) -> None:
@@ -91,17 +109,18 @@ class TestLoadConfig:
 
     def test_derived_paths(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setenv("GH_ACCEL_CACHE", str(tmp_path / "cache"))
-        monkeypatch.setenv("GH_ACCEL_CERTS", str(tmp_path / "certs"))
+        monkeypatch.setenv("GH_ACCEL_CONFIG", str(tmp_path / "config"))
         cfg = load_config()
         assert cfg.file_cache_dir == str(tmp_path / "cache" / "files")
-        assert cfg.cert_dir == str(tmp_path / "certs")
+        assert cfg.cert_dir == str(tmp_path / "config" / "certs")
         assert cfg.ca_pem.endswith("ca.pem")
+        assert cfg.sources_file.endswith("sources.json")
         assert cfg.base_url.startswith("http://127.0.0.1:")
 
     def test_certs_are_outside_cache_dir(self, monkeypatch) -> None:
         """CA 是持久凭据，不能放在可被清理的 cache_dir 里。"""
         monkeypatch.setenv("GH_ACCEL_CACHE", "/tmp/x/cache")
-        monkeypatch.setenv("GH_ACCEL_CERTS", "/tmp/x/certs")
+        monkeypatch.setenv("GH_ACCEL_CONFIG", "/tmp/x/config")
         cfg = load_config()
         assert not cfg.cert_dir.startswith(cfg.cache_dir)
         assert not cfg.ca_pem.startswith(cfg.cache_dir)

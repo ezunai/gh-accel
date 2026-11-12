@@ -10,10 +10,11 @@ import re
 from dataclasses import dataclass
 
 __all__ = [
-    "Host",
     "Source",
     "Config",
     "load_config",
+    "DEFAULT_SOURCES",
+    "CHAINS",
     "RELEASE_PATH_RE",
     "RAW_PATH_RE",
     "API_PATH_RE",
@@ -22,104 +23,35 @@ __all__ = [
     "MITM_ROUTES",
 ]
 
+#: 下载链路。源可以声明适用于其中一条或多条。
+CHAINS = ("release", "page", "raw", "api")
+
 
 @dataclass(frozen=True)
 class Source:
     """一个下载源。
 
-    ``template`` 里的占位符依链路而定：
+    同一个加速服务在不同链路上的 URL 形态不同（如 release 用
+    ``{owner}/{repo}/{tag}/{file}``，页面用 ``{path}``），因此按链路
+    分别给出模板。源名全局唯一。
 
-    * release: ``{owner} {repo} {tag} {file}``
-    * 其它:     ``{path}``
+    ``priority`` 越小越靠前（默认 100）。
     """
 
     name: str
-    template: str
+    templates: dict[str, str]
+    priority: int = 100
+    builtin: bool = True
 
-    def url(self, **kwargs: str) -> str:
-        return self.template.format(**kwargs)
+    @property
+    def chains(self) -> tuple[str, ...]:
+        return tuple(self.templates)
 
+    def url(self, chain: str, **kwargs: str) -> str:
+        return self.templates[chain].format(**kwargs)
 
-@dataclass(frozen=True)
-class Host:
-    """一个 MITM 路由目标。"""
-
-    host: str
-    kind: str  # release | raw | api
-
-
-# ---- 路径正则 --------------------------------------------------------------
-RELEASE_PATH_RE = re.compile(
-    r"^/gh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/download/"
-    r"(?P<tag>[^/]+)/(?P<file>.+)$"
-)
-RAW_PATH_RE = re.compile(r"^/raw/(?P<path>.+)$")
-API_PATH_RE = re.compile(r"^/api/(?P<path>.+)$")
-GH_PATH_RE = re.compile(r"^/gh/(?P<path>.+)$")
-GIT_PATH_RE = re.compile(r"^/git/(?P<path>.+)$")
-
-#: MITM（CONNECT 隧道）模式下，哪些 host 走加速链路
-MITM_ROUTES = {
-    "github.com": "release",
-    "raw.githubusercontent.com": "raw",
-    "api.github.com": "api",
-}
-
-
-# ---- 源池 ------------------------------------------------------------------
-#: GitHub release 资产。中科大镜像是最快的（10-40MB/s），但只覆盖部分仓库。
-RELEASE_SOURCES: tuple[Source, ...] = (
-    Source("ustc", "https://mirrors.ustc.edu.cn/github-release/{owner}/{repo}/{tag}/{file}"),
-    Source(
-        "gh-proxy.cc",
-        "https://gh-proxy.cc/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source(
-        "ghfast.top",
-        "https://ghfast.top/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source(
-        "gh-proxy.com",
-        "https://gh-proxy.com/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source(
-        "ghproxy.imciel.com",
-        "https://ghproxy.imciel.com/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source(
-        "ghproxy.cfd",
-        "https://ghproxy.cfd/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source(
-        "ghproxy.net",
-        "https://ghproxy.net/https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
-    ),
-    Source("direct", "https://github.com/{owner}/{repo}/releases/download/{tag}/{file}"),
-)
-
-#: github.com 的其它路径（git smart http 的 info/refs、网页等）
-PAGE_SOURCES: tuple[Source, ...] = (
-    Source("ghfast.top", "https://ghfast.top/https://github.com/{path}"),
-    Source("gh-proxy.com", "https://gh-proxy.com/https://github.com/{path}"),
-    Source("gh-proxy.cc", "https://gh-proxy.cc/https://github.com/{path}"),
-    Source("gitclone.com", "https://gitclone.com/github.com/{path}"),
-    Source("direct", "https://github.com/{path}"),
-)
-
-#: raw.githubusercontent.com 文本
-RAW_SOURCES: tuple[Source, ...] = (
-    Source("gh-proxy.cc", "https://gh-proxy.cc/https://raw.githubusercontent.com/{path}"),
-    Source("ghfast.top", "https://ghfast.top/https://raw.githubusercontent.com/{path}"),
-    Source("gh-proxy.com", "https://gh-proxy.com/https://raw.githubusercontent.com/{path}"),
-    Source("direct", "https://raw.githubusercontent.com/{path}"),
-)
-
-#: api.github.com
-API_SOURCES: tuple[Source, ...] = (
-    Source("gh-proxy.cc", "https://gh-proxy.cc/https://api.github.com/{path}"),
-    Source("ghfast.top", "https://ghfast.top/https://api.github.com/{path}"),
-    Source("direct", "https://api.github.com/{path}"),
-)
+    def serves(self, chain: str) -> bool:
+        return chain in self.templates
 
 
 @dataclass(frozen=True)
@@ -133,6 +65,8 @@ class Config:
     #: 持久凭据（CA 私钥与证书）。不能放在 cache_dir —— 缓存被清理工具
     #: 删除后，客户端（curl/wget/git）的信任会同时失效。
     certs_dir: str
+    #: 用户自定义的源配置文件
+    sources_file: str
     #: 上游请求超时（秒）
     timeout: float
     #: 竞速探测的单源超时（秒）
@@ -171,6 +105,101 @@ class Config:
         return f"http://{self.host}:{self.port}"
 
 
+# ---- 路径正则 --------------------------------------------------------------
+RELEASE_PATH_RE = re.compile(
+    r"^/gh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/download/"
+    r"(?P<tag>[^/]+)/(?P<file>.+)$"
+)
+RAW_PATH_RE = re.compile(r"^/raw/(?P<path>.+)$")
+API_PATH_RE = re.compile(r"^/api/(?P<path>.+)$")
+GH_PATH_RE = re.compile(r"^/gh/(?P<path>.+)$")
+GIT_PATH_RE = re.compile(r"^/git/(?P<path>.+)$")
+
+#: MITM（CONNECT 隧道）模式下，哪些 host 走加速链路
+MITM_ROUTES = {
+    "github.com": "release",
+    "raw.githubusercontent.com": "raw",
+    "api.github.com": "api",
+}
+
+
+# ---- 内置源注册表 ----------------------------------------------------------
+def _src(name: str, priority: int, **templates: str) -> Source:
+    """构造内置源。``templates`` 的键是链路名。"""
+    return Source(name=name, templates=dict(templates), priority=priority, builtin=True)
+
+
+_GH = "https://{host}/{owner}/{repo}/releases/download/{tag}/{file}"
+_GH_PATH = "https://{host}/{path}"
+
+#: 内置源。中科大镜像最快（10-40MB/s）但只覆盖部分仓库；各加速服务作为
+#: 兜底；direct 永远排最后。
+DEFAULT_SOURCES: tuple[Source, ...] = (
+    _src(
+        "ustc",
+        10,
+        release="https://mirrors.ustc.edu.cn/github-release/{owner}/{repo}/{tag}/{file}",
+    ),
+    _src(
+        "gh-proxy.cc",
+        20,
+        release="https://gh-proxy.cc/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+        page="https://gh-proxy.cc/https://github.com/{path}",
+        raw="https://gh-proxy.cc/https://raw.githubusercontent.com/{path}",
+        api="https://gh-proxy.cc/https://api.github.com/{path}",
+    ),
+    _src(
+        "ghfast.top",
+        30,
+        release="https://ghfast.top/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+        page="https://ghfast.top/https://github.com/{path}",
+        raw="https://ghfast.top/https://raw.githubusercontent.com/{path}",
+        api="https://ghfast.top/https://api.github.com/{path}",
+    ),
+    _src(
+        "gh-proxy.com",
+        40,
+        release="https://gh-proxy.com/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+        page="https://gh-proxy.com/https://github.com/{path}",
+        raw="https://gh-proxy.com/https://raw.githubusercontent.com/{path}",
+    ),
+    _src(
+        "ghproxy.imciel.com",
+        50,
+        release="https://ghproxy.imciel.com/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+    ),
+    _src(
+        "ghproxy.cfd",
+        60,
+        release="https://ghproxy.cfd/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+    ),
+    _src(
+        "ghproxy.net",
+        70,
+        release="https://ghproxy.net/https://github.com"
+        "/{owner}/{repo}/releases/download/{tag}/{file}",
+    ),
+    _src(
+        "gitclone.com",
+        80,
+        page="https://gitclone.com/github.com/{path}",
+    ),
+    _src(
+        "direct",
+        999,
+        release="https://github.com/{owner}/{repo}/releases/download/{tag}/{file}",
+        page="https://github.com/{path}",
+        raw="https://raw.githubusercontent.com/{path}",
+        api="https://api.github.com/{path}",
+    ),
+)
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, default))
@@ -187,11 +216,13 @@ def _env_float(name: str, default: float) -> float:
 
 def load_config() -> Config:
     """从环境变量读取配置。"""
+    config_home = os.path.expanduser(os.environ.get("GH_ACCEL_CONFIG", "~/.config/gh-accel"))
     return Config(
         host=os.environ.get("GH_ACCEL_HOST", "127.0.0.1"),
         port=_env_int("GH_ACCEL_PORT", 19770),
         cache_dir=os.path.expanduser(os.environ.get("GH_ACCEL_CACHE", "~/.cache/gh-accel")),
-        certs_dir=os.path.expanduser(os.environ.get("GH_ACCEL_CERTS", "~/.config/gh-accel/certs")),
+        certs_dir=os.path.join(config_home, "certs"),
+        sources_file=os.path.join(config_home, "sources.json"),
         timeout=_env_float("GH_ACCEL_TIMEOUT", 25.0),
         probe_timeout=_env_float("GH_ACCEL_PROBE_TIMEOUT", 12.0),
         probe_max_duration=_env_float("GH_ACCEL_PROBE_MAX", 5.0),
