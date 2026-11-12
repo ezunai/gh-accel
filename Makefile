@@ -33,7 +33,8 @@ lint:  ## 静态检查
 check: test lint  ## 测试 + 检查
 
 service:  ## 安装并重启 systemd user 服务
-	install -Dm644 systemd/gh-accel.service $(SERVICE_DIR)/gh-accel.service
+	sed 's|@GH_ACCEL_ROOT@|$(CURDIR)|g' systemd/gh-accel.service \
+		> $(SERVICE_DIR)/gh-accel.service
 	systemctl --user daemon-reload
 	systemctl --user restart gh-accel.service
 	systemctl --user status gh-accel.service --no-pager
@@ -42,6 +43,13 @@ uninstall:  ## 停用并移除 systemd user 服务
 	systemctl --user disable --now gh-accel.service || true
 	rm -f $(SERVICE_DIR)/gh-accel.service
 	systemctl --user daemon-reload
+
+build:  ## 构建 sdist + wheel
+	uv build
+
+publish:  ## 上传到 PyPI（需先 build）
+	uv build
+	uvx twine upload dist/*
 
 clean:  ## 清理构建产物
 	rm -rf build dist .pytest_cache .ruff_cache src/*.egg-info

@@ -69,13 +69,46 @@ CA 特意**不**放在 `~/.cache/` —— XDG 语义下那是「可被清理工�
 
 ## 安装
 
-```bash
-# 开发依赖（pytest / ruff）
-make dev
+### 一键脚本（推荐）
 
-# 测试与静态检查
-make check
+```bash
+# 从仓库安装
+curl -fsSL https://raw.githubusercontent.com/OWNER/gh-accel/main/scripts/install.sh | bash
+
+# 或本地
+./scripts/install.sh
 ```
+
+脚本会：安装三个命令行工具到 `~/.local/bin`、安装并启用 systemd user 服务、
+生成 CA 并配置 curl / wget / git 的信任与代理。可用 `--no-service`、
+`--no-client`、`--prefix`、`--root` 调整。幂等，重复执行安全。
+
+装完后把下面两行加进 `~/.config/mise/config.toml` 即可让 mise 走代理：
+
+```toml
+[settings.url_replacements]
+'regex:^https://github\.com/' = "http://127.0.0.1:19770/gh/"
+'regex:^https://raw\.githubusercontent\.com/' = "http://127.0.0.1:19770/raw/"
+```
+
+### 手动安装
+
+```bash
+git clone https://github.com/OWNER/gh-accel.git ~/Code/personal/gh-accel
+cd ~/Code/personal/gh-accel
+make dev        # 开发依赖（pytest / ruff）
+make check      # 测试 + 静态检查
+make service    # 安装 unit + daemon-reload + restart
+```
+
+### 从 PyPI 安装（只装库与 CLI）
+
+```bash
+pip install gh-accel      # 提供 gh_accel 包与 gh-accel 命令
+```
+
+注意：PyPI 版本不含 systemd unit 与客户端配置，仍需手动执行
+`scripts/install.sh --no-service` 或自行配置。
 
 命令行入口不依赖 pip 安装，用 wrapper 直接调用源码：
 
@@ -267,6 +300,20 @@ sudo update-ca-certificates
 ```
 
 不建议这么做：装进系统信任库后，所有程序的 HTTPS 流量都会经过这个代理。
+
+## 开发
+
+```bash
+make dev      # 安装开发依赖（uv venv + pytest + ruff）
+make test     # 跑测试
+make lint     # ruff check + format --check
+make check    # test + lint
+make build    # 构建 sdist + wheel
+```
+
+CI（GitHub Actions）覆盖 Python 3.10-3.13 的测试矩阵、静态检查与打包；
+打 `v*` tag 时自动构建并发布到 PyPI（需配置 Trusted Publisher 或
+`PYPI_API_TOKEN` secret）。
 
 ## License
 
