@@ -98,12 +98,15 @@ git push origin main --tags
 gh release create v1.2.0 --title "v1.2.0" --notes-file CHANGELOG.md
 ```
 
-## 校验发布物
+## 校验构建产物
+
+构建分发包只是为了验证 `pyproject.toml` 的元数据和打包内容没问题，**产物
+不发布到任何包仓库**。
 
 ```bash
 make check        # 测试 + 静态检查
-make build        # 构建 sdist + wheel（仅本地留档，不上传）
-uvx twine check dist/*
+make build        # 构建 sdist + wheel
+uvx twine check dist/*   # 只做元数据校验，不上传
 ```
 
 ## 给发行版打标签
@@ -114,4 +117,4 @@ uvx twine check dist/*
 - `CHANGELOG.md` 里有对应版本的条目与日期
 - `pyproject.toml` 里的仓库 URL 指向正确账号
 - `make check` 与 `make build` 均通过
-- `twine check dist/*` 通过
+- `twine check dist/*` 通过（仅校验，不上传）
