@@ -107,16 +107,15 @@ make check      # 测试 + 静态检查
 make service    # 安装 unit + daemon-reload + restart
 ```
 
-### 从 PyPI 安装
+### 包内安装入口
 
 ```bash
-pip install gh-accel
 gh-accel install          # 装服务 + 生成 CA + 配置 curl/wget/git
 ```
 
-`gh-accel install` 与 `scripts/install.sh` 是同一份实现（前者是包内入口，
-后者是脚本包装），行为一致。选项：`--no-service`、`--no-client`、
-`--prefix`、`--root`、`--port`、`--dry-run`。
+它与 `scripts/install.sh` 是同一份实现（前者是包内入口，后者是脚本包装），
+行为一致。选项：`--no-service`、`--no-client`、`--prefix`、`--root`、
+`--port`、`--dry-run`。
 
 命令行入口不依赖 pip 安装，用 wrapper 直接调用源码：
 
@@ -474,14 +473,12 @@ make check    # test + lint
 make build    # 构建 sdist + wheel
 ```
 
-CI（GitHub Actions）覆盖 Python 3.10-3.13 的测试矩阵、静态检查与打包；
-打 `v*` tag 时自动构建并发布到 PyPI（需配置 Trusted Publisher 或
-`PYPI_API_TOKEN` secret）。
+CI（GitHub Actions）覆盖 Python 3.10-3.13 的测试矩阵、静态检查与打包。
 
 ## 发布
 
-代码同时发布到 GitHub（主仓库）、Gitee（国内镜像）与 PyPI。完整流程见
-[PUBLISHING.md](PUBLISHING.md)。
+项目**只发布到 GitHub**（源码 + Release），不发布到 PyPI 或其它包仓库。
+完整流程见 [PUBLISHING.md](PUBLISHING.md)。
 
 ## License
 

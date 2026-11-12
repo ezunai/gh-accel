@@ -47,10 +47,6 @@ uninstall:  ## 停用并移除 systemd user 服务
 build:  ## 构建 sdist + wheel
 	uv build
 
-publish:  ## 上传到 PyPI（需先 build）
-	uv build
-	uvx twine upload dist/*
-
 clean:  ## 清理构建产物
 	rm -rf build dist .pytest_cache .ruff_cache src/*.egg-info
 	find . -name '__pycache__' -type d -prune -exec rm -rf {} +

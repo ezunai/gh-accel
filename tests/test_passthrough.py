@@ -191,11 +191,19 @@ class TestStreamingIsNotBuffered:
             assert b"200 OK" in first[:20]
             assert b"Content-Length: 2048" in first
 
-            # 继续读，在上游仍未放行时应已收到 body 的一部分
+            # 继续读，在上游仍未放行时应已收到 body 的一部分。
+            # 注意 body 可能和响应头一起被第一次 recv 读到（上游写得快时
+            # 两块数据会挤在同一个 TCP 段里），所以要先检查已有的 buf，
+            # 不能只看后续 recv 到的新数据 —— 否则会误判成「没收到 body」。
             buf = first
+
+            def has_body(data: bytes) -> bool:
+                head, sep, rest = data.partition(b"\r\n\r\n")
+                return bool(sep) and bool(rest)
+
+            got_body = has_body(buf)
             deadline = time.time() + 8
-            got_body = False
-            while time.time() < deadline:
+            while not got_body and time.time() < deadline:
                 sock.settimeout(0.5)
                 try:
                     chunk = sock.recv(65536)
@@ -204,9 +212,7 @@ class TestStreamingIsNotBuffered:
                 if not chunk:
                     break
                 buf += chunk
-                if b"\r\n\r\n" in buf and buf.split(b"\r\n\r\n", 1)[1]:
-                    got_body = True
-                    break
+                got_body = has_body(buf)
             assert got_body, "上游还在阻塞时，客户端就应收到 body 的第一部分"
             sock.close()
         finally:

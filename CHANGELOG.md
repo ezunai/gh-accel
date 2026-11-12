@@ -24,6 +24,12 @@
   流量走本代理（默认不启用）。MITM 新增 ghcr.io / quay.io 路由，走 passthrough。
 - **CA bundle**：新增「系统 CA + 本地 CA」的合集
   （`~/.config/gh-accel/certs/ca-bundle.pem`），由 `gh-accel install` 生成。
+- **源池可配置**：源从写死改为注册表 + 用户配置文件
+  （`~/.config/gh-accel/sources.json`）。可用 `gh-accel sources` 增删源、
+  停用/启用内置源、调整优先级。一个源可同时服务多条链路
+  （release / page / raw / api），各链路 URL 模板分别给出。
+- **源配置热重载**：代理每次取源前检查配置文件是否变化，改完立即生效，
+  无需重启 systemd 服务。
 
 ### 修复
 
@@ -38,19 +44,18 @@
 - **绝对 URI 支持**（`GET http://host/path`），标准 HTTP 代理语义，明文模式
   下也能代理任意站点。
 
+### 变更
+
+- **发布渠道只保留 GitHub**。移除 PyPI 发布相关内容（CI 的 `publish` job、
+  Makefile 的 `publish` 目标、README 的 PyPI 安装段），发布即「源码仓库 +
+  Release」。CI 的 `build` job 仍然构建并校验分发包，作为质量门，但不上传。
+
 ### 重要说明
 
 `cacert` / `SSL_CERT_FILE` 都是**替换**默认 CA 列表而非追加。只配置本地 CA
 会导致直连任何其它站点都因缺根证书而校验失败（表现为连接卡死或
 certificate verify failed），很容易被误判成网络问题。因此客户端一律使用
 CA bundle。
-
-- **源池可配置**：源从写死改为注册表 + 用户配置文件
-  （`~/.config/gh-accel/sources.json`）。可用 `gh-accel sources` 增删源、
-  停用/启用内置源、调整优先级。一个源可同时服务多条链路
-  （release / page / raw / api），各链路 URL 模板分别给出。
-- **源配置热重载**：代理每次取源前检查配置文件是否变化，改完立即生效，
-  无需重启 systemd 服务。
 
 ## [1.0.0] - 2026-11-13
 

@@ -2,7 +2,7 @@
 
 把原先只存在于 ``scripts/install.sh`` 里的逻辑收进包内，好处是：
 
-* PyPI 用户 ``pip install gh-accel`` 后直接 ``gh-accel install`` 即可，
+* 从 GitHub 获取代码后直接 ``gh-accel install`` 即可，
   不必再去 GitHub 拿脚本；
 * ``scripts/install.sh`` 退化成薄包装，与 ``gh-accel install`` 共用同一份
   实现，不会出现两套逻辑漂移。

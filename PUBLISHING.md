@@ -1,6 +1,6 @@
 # 发布流程
 
-本项目发布到 **GitHub**。PyPI 发布走 CI（推送 `v*` tag 触发），Gitee 镜像暂不启用。
+本项目**只发布到 GitHub**：源码仓库 + Release。不发布到 PyPI、Gitee 或其它包仓库。
 
 ## 仓库结构
 
@@ -56,47 +56,23 @@ git push origin --tags
 gh release create v1.1.0 --title "v1.1.0" --notes-file CHANGELOG.md
 ```
 
-`gh` 走 HTTPS API，本机需要让 `api.github.com` 直连（`--noproxy` 由 curlrc 提供），
-或者直接用 API：
+本机没有 `gh` 时，直接用 API：
 
 ```bash
+BODY=$(python3 - <<'PY'
+import pathlib, json
+s = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+start = s.index("## [1.1.0]")
+end = s.index("## [1.0.0]")
+print(json.dumps("\n".join(s[start:end].strip().splitlines()[1:]).strip(),
+                 ensure_ascii=False))
+PY
+)
+
 curl -s -X POST --noproxy '*' \
   -H "Authorization: Bearer $TOKEN" \
   https://api.github.com/repos/ezunai/gh-accel/releases \
-  -d '{"tag_name":"v1.1.0","name":"v1.1.0","body":"见 CHANGELOG.md"}'
-```
-
-### 5. 发布到 PyPI
-
-CI 已配好：推送 `v*` tag 时自动构建并发布（`.github/workflows/ci.yml` 的
-`publish` job）。需要先配置凭据，二选一：
-
-**Trusted Publisher（推荐，无需长期 token）**
-
-在 PyPI 侧为 `ezunai/gh-accel` 添加 Trusted Publisher，填：
-
-- Owner: `ezunai`
-- Repository: `gh-accel`
-- Workflow: `ci.yml`
-- Environment: `pypi`（若未创建 environment 则留空）
-
-**API Token**
-
-在仓库 Settings → Secrets → Actions 添加 `PYPI_API_TOKEN`，并把 CI 里
-`publish` job 的 `uses: pypa/gh-action-pypi-publish@release/v1` 改为：
-
-```yaml
-      - name: 发布到 PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-```
-
-手动发布（不走 CI）：
-
-```bash
-make build
-uvx twine upload dist/*
+  -d "{\"tag_name\":\"v1.1.0\",\"name\":\"v1.1.0\",\"body\":$BODY}"
 ```
 
 ## 后续版本发布
@@ -114,7 +90,7 @@ $EDITOR CHANGELOG.md
 # 3. 提交
 git add -A && git commit -m "release: v1.2.0"
 
-# 4. 打 tag 并推送（推送 tag 触发 PyPI 发布）
+# 4. 打 tag 并推送
 git tag -a v1.2.0 -m "release: v1.2.0"
 git push origin main --tags
 
@@ -126,7 +102,7 @@ gh release create v1.2.0 --title "v1.2.0" --notes-file CHANGELOG.md
 
 ```bash
 make check        # 测试 + 静态检查
-make build        # 构建 sdist + wheel
+make build        # 构建 sdist + wheel（仅本地留档，不上传）
 uvx twine check dist/*
 ```
 
