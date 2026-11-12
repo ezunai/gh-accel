@@ -11,7 +11,6 @@ import http.server
 import threading
 import time
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
