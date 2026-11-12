@@ -128,10 +128,22 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def _forward(self, response) -> None:
         """把上游响应透传给客户端。
 
-        必须给出确切的 Content-Length：上游常 chunked 编码，urllib 解码后
-        会剥离 Transfer-Encoding 头，若不补长度且不关闭连接，客户端会一直
-        等待响应结束（git/curl 表现为超时）。
+        两种情况要分开处理：
+
+        * **上游带 Content-Length** —— 直接流式转发。响应体可能很大
+          （Docker 的镜像层上百 MB），全量缓冲会吃光内存，且客户端要等到
+          全部收完才看到第一个字节。
+        * **上游是 chunked** —— urllib 解码后剥离了 Transfer-Encoding 头，
+          此时没有确切长度可用。若不补长度且不关连接，客户端会一直等待
+          响应结束（git/curl 表现为超时）。这种情况才全量缓冲。
         """
+        content_length = response.headers.get("Content-Length")
+        streaming = content_length is not None and content_length.isdigit()
+
+        if streaming:
+            self._send_stream(response, int(content_length))
+            return
+
         try:
             data = response.read()
         except Exception:  # noqa: BLE001
@@ -162,6 +174,49 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
+
+    def _send_stream(self, response, length: int) -> None:
+        """流式转发上游响应体，不在内存里缓冲。
+
+        上游已声明确切长度，因此直接沿用该长度并边读边写，客户端能立刻
+        收到首字节，内存占用也与响应体大小无关。
+        """
+        self.send_response(response.status)
+        content_type = response.headers.get("Content-Type")
+        if content_type:
+            self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(length))
+        for name in (
+            "ETag",
+            "Last-Modified",
+            "Content-Disposition",
+            "Cache-Control",
+            "X-GitHub-Request-Id",
+        ):
+            value = response.headers.get(name)
+            if value:
+                self.send_header(name, value)
+        self.end_headers()
+        if self.command == "HEAD":
+            with contextlib.suppress(Exception):
+                response.close()
+            return
+        try:
+            remaining = length
+            while remaining > 0:
+                # 必须用 read1 而不是 read：read(n) 是「读满 n 字节」的语义，
+                # 上游分批推送时会一直阻塞，导致客户端迟迟收不到数据
+                chunk = response.read1(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        finally:
+            with contextlib.suppress(Exception):
+                response.close()
 
     # ---- 明文路由 --------------------------------------------------------
     def _sources(self, chain: str):
@@ -271,6 +326,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if getattr(self, "_mitm", False):
             self._handle_mitm()
             return
+
+        # 标准 HTTP 代理语义：请求行可以是绝对 URI（GET http://host/path）
+        if self.path.startswith("http://"):
+            self._serve_absolute(self.path)
+            return
+
         path = self.path.split("?", 1)[0]
         headers = self._client_headers()
 
@@ -403,7 +464,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if kind == "page":
             self._serve_page(payload, headers, body or None)
             return
-        self._passthrough(host, path, headers, body)
+        self._passthrough("https://" + host + path, headers, body)
 
     def _read_body(self, headers: dict[str, str]) -> bytes:
         length = headers.get("content-length")
@@ -445,11 +506,23 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return "api", path.lstrip("/")
         return "passthrough", path
 
-    def _passthrough(
-        self, host: str, path: str, headers: dict[str, str], body: bytes | None
-    ) -> None:
-        """其它 host 原样转发（保持通用代理能力）。"""
-        url = "https://" + host + path
+    def _serve_absolute(self, uri: str) -> None:
+        """处理绝对 URI 形式的请求（标准 HTTP 代理语义）。
+
+        ``GET http://host/path HTTP/1.1`` —— 客户端把完整 URL 交给代理，
+        代理原样转发。这让明文模式下也能代理任意站点，不限于 GitHub。
+        """
+        headers = self._client_headers()
+        self._passthrough(uri, headers, None)
+
+    def _passthrough(self, url: str, headers: dict[str, str], body: bytes | None) -> None:
+        """任意 URL 原样转发（保持通用代理能力）。"""
+        host = url.split("://", 1)[-1].split("/", 1)[0]
+        path = (
+            "/" + url.split("://", 1)[-1].split("/", 1)[1]
+            if "/" in url.split("://", 1)[-1]
+            else "/"
+        )
         try:
             response = self.fetcher.open(url, _clean(headers), self.command, data=body or None)
         except urllib.error.HTTPError as exc:
