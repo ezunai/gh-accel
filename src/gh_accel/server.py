@@ -15,6 +15,7 @@ import logging
 import os
 import socket
 import socketserver
+import urllib.error
 from http.server import BaseHTTPRequestHandler
 
 from .cache import FileCache, SourcePreference
@@ -448,6 +449,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
         url = "https://" + host + path
         try:
             response = self.fetcher.open(url, _clean(headers), self.command, data=body or None)
+        except urllib.error.HTTPError as exc:
+            # 上游的 4xx/5xx 是有效响应，应原样透传 —— 否则客户端看到的是
+            # 一个不存在的 502，掩盖了「资源确实不存在」这个事实
+            log.info("MITM passthrough %s%s -> HTTP %s", host, path[:60], exc.code)
+            self._forward(exc)
+            return
         except Exception as exc:  # noqa: BLE001
             log.info("MITM passthrough %s%s 失败: %s", host, path[:60], exc)
             self._err(502, str(exc))
