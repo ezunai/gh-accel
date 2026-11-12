@@ -30,10 +30,10 @@ dev = ["pytest>=7.0", "ruff>=0.5"]
 gh-accel = "gh_accel.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/osmos/gh-accel"
-Repository = "https://github.com/osmos/gh-accel"
-Issues = "https://github.com/osmos/gh-accel/issues"
-Changelog = "https://github.com/osmos/gh-accel/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ezunai/gh-accel"
+Repository = "https://github.com/ezunai/gh-accel"
+Issues = "https://github.com/ezunai/gh-accel/issues"
+Changelog = "https://github.com/ezunai/gh-accel/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

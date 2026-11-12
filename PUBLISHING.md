@@ -1,57 +1,81 @@
 # 发布流程
 
-本项目同时发布到 **GitHub**（主仓库）、**Gitee**（国内镜像）、**PyPI**。
+本项目发布到 **GitHub**。PyPI 发布走 CI（推送 `v*` tag 触发），Gitee 镜像暂不启用。
 
 ## 仓库结构
 
 | 远程 | 地址 | 作用 |
 | --- | --- | --- |
-| `origin` | `https://github.com/osmos/gh-accel.git` | 主仓库；CI、Release、Issue 都以它为准 |
-| `gitee` | `https://gitee.com/osmos/gh-accel.git` | 国内镜像，clone 与安装脚本走这里 |
+| `origin` | `https://github.com/ezunai/gh-accel.git` | 主仓库；CI、Release、Issue 都以它为准 |
+
+## 本机的网络约束
+
+这台机器上 `github.com:443` **不可达**（TCP 建连失败），但：
+
+| 通道 | 状态 | 用途 |
+| --- | --- | --- |
+| `github.com:22`（SSH） | 通 | `git push`（需先注册 SSH 公钥） |
+| `api.github.com:443` | 通 | 建仓库、加公钥、建 Release |
+
+所以推送走 SSH，仓库/Release 的操作走 API。
 
 ## 首次发布
 
-### 1. 在平台创建空仓库
+### 1. 创建仓库
 
 ```bash
-# GitHub（不要初始化 README/LICENSE/.gitignore，保留历史）
-gh repo create osmos/gh-accel --public --description "本地 GitHub 下载加速代理" --source=. --remote=origin --push
+TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
 
-# Gitee
-# 在 https://gitee.com/osmos/gh-accel 新建仓库（同样选「空仓库」），然后：
-git push -u gitee main
+curl -s -X POST --noproxy '*' \
+  -H "Authorization: Bearer $TOKEN" \
+  https://api.github.com/user/repos \
+  -d '{"name":"gh-accel","description":"本地 GitHub 下载加速代理","private":false}'
 ```
 
-两个仓库都要设为公开。
-
-### 2. 打 tag 并推送
+### 2. 注册 SSH 公钥
 
 ```bash
-git tag -a v1.0.0 -m "release: v1.0.0"
-git push origin main --tags
-git push gitee main --tags
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C "gh-accel@$(hostname)"
+curl -s -X POST --noproxy '*' \
+  -H "Authorization: Bearer $TOKEN" \
+  https://api.github.com/user/keys \
+  -d "{\"title\":\"$(hostname)\",\"key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"
 ```
 
-### 3. GitHub Release
+### 3. 推送
 
 ```bash
-gh release create v1.0.0 \
-  --title "v1.0.0" \
-  --notes-file CHANGELOG.md
+git remote set-url origin git@github.com:ezunai/gh-accel.git
+git push -u origin main
+git push origin --tags
 ```
 
-Gitee 的 Release 可在网页端手动创建，或用 Gitee API。
+### 4. GitHub Release
 
-### 4. 发布到 PyPI
+```bash
+gh release create v1.1.0 --title "v1.1.0" --notes-file CHANGELOG.md
+```
+
+`gh` 走 HTTPS API，本机需要让 `api.github.com` 直连（`--noproxy` 由 curlrc 提供），
+或者直接用 API：
+
+```bash
+curl -s -X POST --noproxy '*' \
+  -H "Authorization: Bearer $TOKEN" \
+  https://api.github.com/repos/ezunai/gh-accel/releases \
+  -d '{"tag_name":"v1.1.0","name":"v1.1.0","body":"见 CHANGELOG.md"}'
+```
+
+### 5. 发布到 PyPI
 
 CI 已配好：推送 `v*` tag 时自动构建并发布（`.github/workflows/ci.yml` 的
 `publish` job）。需要先配置凭据，二选一：
 
 **Trusted Publisher（推荐，无需长期 token）**
 
-在 PyPI 侧为 `osmos/gh-accel` 添加 Trusted Publisher，填：
+在 PyPI 侧为 `ezunai/gh-accel` 添加 Trusted Publisher，填：
 
-- Owner: `osmos`
+- Owner: `ezunai`
 - Repository: `gh-accel`
 - Workflow: `ci.yml`
 - Environment: `pypi`（若未创建 environment 则留空）
@@ -82,58 +106,20 @@ uvx twine upload dist/*
 
 ```bash
 # 1. 改版本号
-sed -i 's/__version__ = ".*"/__version__ = "1.1.0"/' src/gh_accel/__init__.py
+sed -i 's/__version__ = ".*"/__version__ = "1.2.0"/' src/gh_accel/__init__.py
 
 # 2. 更新 CHANGELOG
 $EDITOR CHANGELOG.md
 
 # 3. 提交
-git add -A && git commit -m "release: v1.1.0"
+git add -A && git commit -m "release: v1.2.0"
 
 # 4. 打 tag 并推送（推送 tag 触发 PyPI 发布）
-git tag -a v1.1.0 -m "release: v1.1.0"
+git tag -a v1.2.0 -m "release: v1.2.0"
 git push origin main --tags
-git push gitee main --tags
 
 # 5. GitHub Release
-gh release create v1.1.0 --title "v1.1.0" --notes-file CHANGELOG.md
-```
-
-## 保持 Gitee 镜像同步
-
-Gitee 没有内置的 GitHub 镜像同步功能（有依赖 CI 额度的「镜像仓库」功能）。
-两个选择：
-
-**手动同步**（最省事）
-
-```bash
-git push gitee main --tags
-```
-
-**自动同步**（GitHub Actions → Gitee API）
-
-在仓库 Secrets 里加 `GITEE_TOKEN`（Gitee 私人令牌，需要 `projects` 权限），
-然后加一个 workflow：
-
-```yaml
-name: Sync to Gitee
-on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: 推送到 Gitee
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        run: |
-          git remote add gitee https://osmos:$GITEE_TOKEN@gitee.com/osmos/gh-accel.git
-          git push gitee main --tags
+gh release create v1.2.0 --title "v1.2.0" --notes-file CHANGELOG.md
 ```
 
 ## 校验发布物

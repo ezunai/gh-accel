@@ -5,7 +5,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.1.0] - 2026-11-13
 
 ### 新增
 
@@ -99,5 +99,5 @@ CA bundle。
 - CA 只写入用户级配置（`~/.gitconfig`、`~/.curlrc`、`~/.config/wget/wgetrc`），
   **不会**装进系统信任库，因此系统级其它程序不受影响。
 
-[Unreleased]: https://github.com/osmos/gh-accel/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/osmos/gh-accel/releases/tag/v1.0.0
+[1.1.0]: https://github.com/ezunai/gh-accel/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/ezunai/gh-accel/releases/tag/v1.0.0

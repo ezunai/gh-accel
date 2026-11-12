@@ -77,11 +77,8 @@ CA 特意**不**放在 `~/.cache/` —— XDG 语义下那是「可被清理工�
 ### 一键脚本（推荐）
 
 ```bash
-# Gitee 镜像（国内直连，推荐）
-curl -fsSL https://gitee.com/osmos/gh-accel/raw/main/scripts/install.sh | bash
-
-# GitHub（国内可能很慢，需先让代理生效）
-curl -fsSL https://raw.githubusercontent.com/osmos/gh-accel/main/scripts/install.sh | bash
+# 从 GitHub 拉取（国内可能很慢，需先让代理生效）
+curl -fsSL https://raw.githubusercontent.com/ezunai/gh-accel/main/scripts/install.sh | bash
 
 # 或本地
 ./scripts/install.sh
@@ -102,11 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/osmos/gh-accel/main/scripts/install
 ### 手动安装
 
 ```bash
-# Gitee 镜像（国内直连）
-git clone https://gitee.com/osmos/gh-accel.git ~/Code/personal/gh-accel
-
-# 或 GitHub
-git clone https://github.com/osmos/gh-accel.git ~/Code/personal/gh-accel
+git clone https://github.com/ezunai/gh-accel.git ~/Code/personal/gh-accel
 
 cd ~/Code/personal/gh-accel
 make dev        # 开发依赖（pytest / ruff）
