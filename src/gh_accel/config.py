@@ -120,6 +120,10 @@ MITM_ROUTES = {
     "github.com": "release",
     "raw.githubusercontent.com": "raw",
     "api.github.com": "api",
+    # 容器 registry：没有对应的加速链路（各加速服务对 registry 的 blob
+    # 域名返回 403/404），走 passthrough 直连即可。
+    "ghcr.io": "passthrough",
+    "quay.io": "passthrough",
 }
 
 

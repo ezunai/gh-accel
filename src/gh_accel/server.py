@@ -65,12 +65,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _client_headers(self) -> dict[str, str]:
+        """取出要转发给上游的请求头。
+
+        ``Authorization`` 必须在其中：容器 registry 的流程是「先换 token，
+        再带 Authorization 拉 blob」，丢了它 blob 请求会 401。
+        """
         wanted = (
             "Range",
             "If-None-Match",
             "If-Modified-Since",
             "Accept",
             "Accept-Encoding",
+            "Authorization",
             "X-GitHub-Api-Version",
         )
         out: dict[str, str] = {}
@@ -504,6 +510,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return "raw", path.lstrip("/")
         if kind == "api":
             return "api", path.lstrip("/")
+        # 未登记的 host 与容器 registry 一律原样转发
         return "passthrough", path
 
     def _serve_absolute(self, uri: str) -> None:
